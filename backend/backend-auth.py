@@ -76,7 +76,8 @@ class TaskBase(BaseModel):
     assignee: str
     status: str
     priority: str
-    deadline: date
+    start_date: date
+    end_date: date
     description: Optional[str] = None
 
 class TaskCreate(TaskBase):
@@ -206,12 +207,31 @@ def init_db():
                 assignee TEXT NOT NULL,
                 status TEXT NOT NULL,
                 priority TEXT NOT NULL,
-                deadline DATE NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
                 description TEXT,
                 created_by INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
+        """)
+
+        # Migration: ajouter start_date et end_date si elles n'existent pas (pour les anciennes BDD)
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN start_date DATE")
+        except sqlite3.OperationalError:
+            pass  # La colonne existe déjà
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN end_date DATE")
+        except sqlite3.OperationalError:
+            pass  # La colonne existe déjà
+
+        # Migrer les données: copier deadline vers end_date si nécessaire
+        cursor.execute("""
+            UPDATE tasks
+            SET end_date = deadline,
+                start_date = created_at
+            WHERE end_date IS NULL AND deadline IS NOT NULL
         """)
         
         # Table des expériences
@@ -362,7 +382,7 @@ async def get_tasks(
             query += " AND priority = ?"
             params.append(priority)
         
-        query += " ORDER BY deadline ASC"
+        query += " ORDER BY end_date ASC"
         
         cursor = conn.cursor()
         cursor.execute(query, params)
@@ -376,10 +396,10 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO tasks (title, assignee, status, priority, deadline, description, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (task.title, task.assignee, task.status, task.priority, 
-              task.deadline, task.description, current_user['id']))
+            INSERT INTO tasks (title, assignee, status, priority, start_date, end_date, description, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task.title, task.assignee, task.status, task.priority,
+              task.start_date, task.end_date, task.description, current_user['id']))
         conn.commit()
         
         task_id = cursor.lastrowid
@@ -396,11 +416,11 @@ async def update_task(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE tasks 
-            SET title=?, assignee=?, status=?, priority=?, deadline=?, description=?
+            UPDATE tasks
+            SET title=?, assignee=?, status=?, priority=?, start_date=?, end_date=?, description=?
             WHERE id=?
-        """, (task.title, task.assignee, task.status, task.priority, 
-              task.deadline, task.description, task_id))
+        """, (task.title, task.assignee, task.status, task.priority,
+              task.start_date, task.end_date, task.description, task_id))
         conn.commit()
         
         if cursor.rowcount == 0:
@@ -486,9 +506,9 @@ async def get_tasks_gantt(current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, title, assignee, status, priority, deadline, created_at, description
+            SELECT id, title, assignee, status, priority, start_date, end_date, description
             FROM tasks
-            ORDER BY created_at ASC
+            ORDER BY start_date ASC
         """)
         tasks = cursor.fetchall()
 
@@ -520,8 +540,8 @@ async def get_tasks_gantt(current_user: dict = Depends(get_current_user)):
                 "assignee": task['assignee'],
                 "status": status,
                 "priority": priority,
-                "start_date": task['created_at'],
-                "end_date": task['deadline'],
+                "start_date": task['start_date'],
+                "end_date": task['end_date'],
                 "progress": progress,
                 "color": color,
                 "description": task['description'] or ""
@@ -543,21 +563,21 @@ async def export_tasks_csv(current_user: dict = Depends(get_current_user)):
     
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tasks ORDER BY deadline")
+        cursor.execute("SELECT * FROM tasks ORDER BY end_date")
         tasks = cursor.fetchall()
-        
+
         # Créer le CSV
         output = io.StringIO()
         writer = csv.writer(output)
-        
+
         # Headers
-        writer.writerow(['ID', 'Title', 'Assignee', 'Status', 'Priority', 'Deadline', 'Description'])
-        
+        writer.writerow(['ID', 'Title', 'Assignee', 'Status', 'Priority', 'Start Date', 'End Date', 'Description'])
+
         # Data
         for task in tasks:
             writer.writerow([
-                task['id'], task['title'], task['assignee'], 
-                task['status'], task['priority'], task['deadline'],
+                task['id'], task['title'], task['assignee'],
+                task['status'], task['priority'], task['start_date'], task['end_date'],
                 task['description'] or ''
             ])
         
