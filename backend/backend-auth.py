@@ -76,7 +76,8 @@ class TaskBase(BaseModel):
     assignee: str
     status: str
     priority: str
-    deadline: date
+    start_date: date
+    end_date: date
     description: Optional[str] = None
 
 class TaskCreate(TaskBase):
@@ -106,16 +107,37 @@ class Experiment(ExperimentBase):
 class ResourceBase(BaseModel):
     name: str
     category: str
-    stock: str
-    status: str
-    unit: Optional[str] = None
+    lot_number: str
+    initial_stock: float
+    unit: str
+    status: str = "available"  # available, low, critical, empty
 
 class ResourceCreate(ResourceBase):
     pass
 
 class Resource(ResourceBase):
     id: int
+    current_stock: float
     updated_at: datetime
+
+# Modèle pour l'utilisation des ressources
+class ResourceUsageCreate(BaseModel):
+    quantity_used: float
+    purpose: str
+
+class ResourceUsage(BaseModel):
+    id: int
+    resource_id: int
+    quantity_used: float
+    purpose: str
+    stock_before: float
+    stock_after: float
+    used_by: int
+    used_at: datetime
+
+class RestockRequest(BaseModel):
+    quantity: float
+    lot_number: Optional[str] = None
 
 # ==================== FONCTIONS UTILITAIRES ====================
 
@@ -206,12 +228,31 @@ def init_db():
                 assignee TEXT NOT NULL,
                 status TEXT NOT NULL,
                 priority TEXT NOT NULL,
-                deadline DATE NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
                 description TEXT,
                 created_by INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
+        """)
+
+        # Migration: ajouter start_date et end_date si elles n'existent pas (pour les anciennes BDD)
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN start_date DATE")
+        except sqlite3.OperationalError:
+            pass  # La colonne existe déjà
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN end_date DATE")
+        except sqlite3.OperationalError:
+            pass  # La colonne existe déjà
+
+        # Migrer les données: copier deadline vers end_date si nécessaire
+        cursor.execute("""
+            UPDATE tasks
+            SET end_date = deadline,
+                start_date = created_at
+            WHERE end_date IS NULL AND deadline IS NOT NULL
         """)
         
         # Table des expériences
@@ -232,20 +273,55 @@ def init_db():
             )
         """)
         
-        # Table des ressources
+        # Table des ressources (composés, réactifs, etc.)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS resources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 category TEXT NOT NULL,
-                stock TEXT NOT NULL,
-                status TEXT NOT NULL,
-                unit TEXT,
+                lot_number TEXT NOT NULL,
+                initial_stock REAL NOT NULL,
+                current_stock REAL NOT NULL,
+                unit TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'available',
+                created_by INTEGER,
                 updated_by INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(id),
                 FOREIGN KEY (updated_by) REFERENCES users(id)
             )
         """)
+
+        # Table pour l'historique des utilisations de ressources
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS resource_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                resource_id INTEGER NOT NULL,
+                quantity_used REAL NOT NULL,
+                purpose TEXT NOT NULL,
+                stock_before REAL NOT NULL,
+                stock_after REAL NOT NULL,
+                used_by INTEGER NOT NULL,
+                used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (resource_id) REFERENCES resources(id),
+                FOREIGN KEY (used_by) REFERENCES users(id)
+            )
+        """)
+
+        # Migration: ajouter les nouvelles colonnes si elles n'existent pas
+        try:
+            cursor.execute("ALTER TABLE resources ADD COLUMN lot_number TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE resources ADD COLUMN initial_stock REAL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE resources ADD COLUMN current_stock REAL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         
         conn.commit()
         
@@ -362,7 +438,7 @@ async def get_tasks(
             query += " AND priority = ?"
             params.append(priority)
         
-        query += " ORDER BY deadline ASC"
+        query += " ORDER BY end_date ASC"
         
         cursor = conn.cursor()
         cursor.execute(query, params)
@@ -376,10 +452,10 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO tasks (title, assignee, status, priority, deadline, description, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (task.title, task.assignee, task.status, task.priority, 
-              task.deadline, task.description, current_user['id']))
+            INSERT INTO tasks (title, assignee, status, priority, start_date, end_date, description, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task.title, task.assignee, task.status, task.priority,
+              task.start_date, task.end_date, task.description, current_user['id']))
         conn.commit()
         
         task_id = cursor.lastrowid
@@ -396,11 +472,11 @@ async def update_task(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE tasks 
-            SET title=?, assignee=?, status=?, priority=?, deadline=?, description=?
+            UPDATE tasks
+            SET title=?, assignee=?, status=?, priority=?, start_date=?, end_date=?, description=?
             WHERE id=?
-        """, (task.title, task.assignee, task.status, task.priority, 
-              task.deadline, task.description, task_id))
+        """, (task.title, task.assignee, task.status, task.priority,
+              task.start_date, task.end_date, task.description, task_id))
         conn.commit()
         
         if cursor.rowcount == 0:
@@ -422,8 +498,232 @@ async def delete_task(task_id: int, current_user: dict = Depends(get_current_use
         
         return {"message": "Task deleted successfully"}
 
-# [Les routes experiments et resources suivent le même pattern...]
-# Je les ai omises pour la brièveté, mais elles sont identiques avec Depends(get_current_user)
+# ==================== ROUTES RESOURCES (Gestion de Stock) ====================
+
+def calculate_resource_status(current_stock: float, initial_stock: float) -> str:
+    """Calculer le statut d'une ressource basé sur le stock"""
+    if current_stock <= 0:
+        return "empty"
+    ratio = current_stock / initial_stock if initial_stock > 0 else 0
+    if ratio <= 0.1:
+        return "critical"
+    elif ratio <= 0.25:
+        return "low"
+    return "available"
+
+@app.get("/api/resources", response_model=List[Resource])
+async def get_resources(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer toutes les ressources"""
+    with get_db() as conn:
+        query = "SELECT * FROM resources WHERE 1=1"
+        params = []
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY name ASC"
+
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        resources = cursor.fetchall()
+
+        return [dict(r) for r in resources]
+
+@app.get("/api/resources/{resource_id}", response_model=Resource)
+async def get_resource(resource_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer une ressource par ID"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        resource = cursor.fetchone()
+
+        if not resource:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        return dict(resource)
+
+@app.post("/api/resources", response_model=Resource)
+async def create_resource(resource: ResourceCreate, current_user: dict = Depends(get_current_user)):
+    """Créer une nouvelle ressource (composé, réactif, etc.)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Le stock actuel = stock initial au départ
+        current_stock = resource.initial_stock
+        status = calculate_resource_status(current_stock, resource.initial_stock)
+
+        cursor.execute("""
+            INSERT INTO resources (name, category, lot_number, initial_stock, current_stock, unit, status, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (resource.name, resource.category, resource.lot_number, resource.initial_stock,
+              current_stock, resource.unit, status, current_user['id'], current_user['id']))
+        conn.commit()
+
+        resource_id = cursor.lastrowid
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/resources/{resource_id}", response_model=Resource)
+async def update_resource(
+    resource_id: int,
+    resource: ResourceCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mettre à jour une ressource"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Récupérer la ressource existante
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        # Si le stock initial change, ajuster le stock actuel proportionnellement
+        if resource.initial_stock != existing['initial_stock']:
+            ratio = existing['current_stock'] / existing['initial_stock'] if existing['initial_stock'] > 0 else 1
+            new_current_stock = resource.initial_stock * ratio
+        else:
+            new_current_stock = existing['current_stock']
+
+        status = calculate_resource_status(new_current_stock, resource.initial_stock)
+
+        cursor.execute("""
+            UPDATE resources
+            SET name=?, category=?, lot_number=?, initial_stock=?, current_stock=?, unit=?, status=?, updated_by=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (resource.name, resource.category, resource.lot_number, resource.initial_stock,
+              new_current_stock, resource.unit, status, current_user['id'], resource_id))
+        conn.commit()
+
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/resources/{resource_id}")
+async def delete_resource(resource_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer une ressource"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM resources WHERE id = ?", (resource_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        return {"message": "Resource deleted successfully"}
+
+# ==================== ROUTES UTILISATION RESSOURCES ====================
+
+@app.post("/api/resources/{resource_id}/usage", response_model=ResourceUsage)
+async def record_resource_usage(
+    resource_id: int,
+    usage: ResourceUsageCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Enregistrer une utilisation de ressource et mettre à jour le stock"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Récupérer la ressource
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        resource = cursor.fetchone()
+
+        if not resource:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        stock_before = resource['current_stock']
+
+        # Vérifier qu'il y a assez de stock
+        if usage.quantity_used > stock_before:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stock insuffisant. Disponible: {stock_before} {resource['unit']}, Demandé: {usage.quantity_used} {resource['unit']}"
+            )
+
+        stock_after = stock_before - usage.quantity_used
+        new_status = calculate_resource_status(stock_after, resource['initial_stock'])
+
+        # Enregistrer l'utilisation
+        cursor.execute("""
+            INSERT INTO resource_usage (resource_id, quantity_used, purpose, stock_before, stock_after, used_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (resource_id, usage.quantity_used, usage.purpose, stock_before, stock_after, current_user['id']))
+
+        # Mettre à jour le stock de la ressource
+        cursor.execute("""
+            UPDATE resources
+            SET current_stock = ?, status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (stock_after, new_status, current_user['id'], resource_id))
+
+        conn.commit()
+
+        usage_id = cursor.lastrowid
+        cursor.execute("SELECT * FROM resource_usage WHERE id = ?", (usage_id,))
+        return dict(cursor.fetchone())
+
+@app.get("/api/resources/{resource_id}/usage", response_model=List[ResourceUsage])
+async def get_resource_usage_history(
+    resource_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer l'historique des utilisations d'une ressource"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Vérifier que la ressource existe
+        cursor.execute("SELECT id FROM resources WHERE id = ?", (resource_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        cursor.execute("""
+            SELECT ru.*, u.full_name as user_name
+            FROM resource_usage ru
+            LEFT JOIN users u ON ru.used_by = u.id
+            WHERE ru.resource_id = ?
+            ORDER BY ru.used_at DESC
+        """, (resource_id,))
+
+        return [dict(row) for row in cursor.fetchall()]
+
+@app.post("/api/resources/{resource_id}/restock", response_model=Resource)
+async def restock_resource(
+    resource_id: int,
+    restock: RestockRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Réapprovisionner une ressource"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        resource = cursor.fetchone()
+
+        if not resource:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
+        new_stock = resource['current_stock'] + restock.quantity
+        new_initial = resource['initial_stock'] + restock.quantity
+        new_lot = restock.lot_number if restock.lot_number else resource['lot_number']
+        new_status = calculate_resource_status(new_stock, new_initial)
+
+        cursor.execute("""
+            UPDATE resources
+            SET current_stock = ?, initial_stock = ?, lot_number = ?, status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (new_stock, new_initial, new_lot, new_status, current_user['id'], resource_id))
+        conn.commit()
+
+        cursor.execute("SELECT * FROM resources WHERE id = ?", (resource_id,))
+        return dict(cursor.fetchone())
 
 # ==================== ROUTES POUR GRAPHIQUES ====================
 
@@ -480,6 +780,58 @@ async def get_experiments_timeline(current_user: dict = Depends(get_current_user
             "data": [row['count'] for row in results]
         }
 
+@app.get("/api/charts/tasks-gantt")
+async def get_tasks_gantt(current_user: dict = Depends(get_current_user)):
+    """Données pour diagramme de Gantt des tâches"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, assignee, status, priority, start_date, end_date, description
+            FROM tasks
+            ORDER BY start_date ASC
+        """)
+        tasks = cursor.fetchall()
+
+        gantt_data = []
+        for task in tasks:
+            # Calculer le pourcentage de progression basé sur le statut
+            status = task['status']
+            if status == 'done':
+                progress = 100
+            elif status == 'progress':
+                progress = 50
+            elif status == 'review':
+                progress = 75
+            else:  # todo, pending
+                progress = 0
+
+            # Couleur basée sur la priorité
+            priority = task['priority']
+            if priority == 'high':
+                color = '#ef4444'  # rouge
+            elif priority == 'medium':
+                color = '#f59e0b'  # orange
+            else:  # low
+                color = '#22c55e'  # vert
+
+            gantt_data.append({
+                "id": task['id'],
+                "title": task['title'],
+                "assignee": task['assignee'],
+                "status": status,
+                "priority": priority,
+                "start_date": task['start_date'],
+                "end_date": task['end_date'],
+                "progress": progress,
+                "color": color,
+                "description": task['description'] or ""
+            })
+
+        return {
+            "tasks": gantt_data,
+            "total": len(gantt_data)
+        }
+
 # ==================== ROUTES POUR EXPORT ====================
 
 @app.get("/api/export/tasks/csv")
@@ -491,21 +843,21 @@ async def export_tasks_csv(current_user: dict = Depends(get_current_user)):
     
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tasks ORDER BY deadline")
+        cursor.execute("SELECT * FROM tasks ORDER BY end_date")
         tasks = cursor.fetchall()
-        
+
         # Créer le CSV
         output = io.StringIO()
         writer = csv.writer(output)
-        
+
         # Headers
-        writer.writerow(['ID', 'Title', 'Assignee', 'Status', 'Priority', 'Deadline', 'Description'])
-        
+        writer.writerow(['ID', 'Title', 'Assignee', 'Status', 'Priority', 'Start Date', 'End Date', 'Description'])
+
         # Data
         for task in tasks:
             writer.writerow([
-                task['id'], task['title'], task['assignee'], 
-                task['status'], task['priority'], task['deadline'],
+                task['id'], task['title'], task['assignee'],
+                task['status'], task['priority'], task['start_date'], task['end_date'],
                 task['description'] or ''
             ])
         
