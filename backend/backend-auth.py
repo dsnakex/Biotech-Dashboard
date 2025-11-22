@@ -480,6 +480,58 @@ async def get_experiments_timeline(current_user: dict = Depends(get_current_user
             "data": [row['count'] for row in results]
         }
 
+@app.get("/api/charts/tasks-gantt")
+async def get_tasks_gantt(current_user: dict = Depends(get_current_user)):
+    """Données pour diagramme de Gantt des tâches"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, assignee, status, priority, deadline, created_at, description
+            FROM tasks
+            ORDER BY created_at ASC
+        """)
+        tasks = cursor.fetchall()
+
+        gantt_data = []
+        for task in tasks:
+            # Calculer le pourcentage de progression basé sur le statut
+            status = task['status']
+            if status == 'done':
+                progress = 100
+            elif status == 'progress':
+                progress = 50
+            elif status == 'review':
+                progress = 75
+            else:  # todo, pending
+                progress = 0
+
+            # Couleur basée sur la priorité
+            priority = task['priority']
+            if priority == 'high':
+                color = '#ef4444'  # rouge
+            elif priority == 'medium':
+                color = '#f59e0b'  # orange
+            else:  # low
+                color = '#22c55e'  # vert
+
+            gantt_data.append({
+                "id": task['id'],
+                "title": task['title'],
+                "assignee": task['assignee'],
+                "status": status,
+                "priority": priority,
+                "start_date": task['created_at'],
+                "end_date": task['deadline'],
+                "progress": progress,
+                "color": color,
+                "description": task['description'] or ""
+            })
+
+        return {
+            "tasks": gantt_data,
+            "total": len(gantt_data)
+        }
+
 # ==================== ROUTES POUR EXPORT ====================
 
 @app.get("/api/export/tasks/csv")
