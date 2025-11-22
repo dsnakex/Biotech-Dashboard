@@ -24,11 +24,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Configuration CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-    "https://biotech-dashboard-q1hicvgqp-pascal-daos-projects.vercel.app",
-        "https://biotech-dashboard-my492taps-pascal-daos-projects.vercel.app",
-    "http://localhost:3000"
-],
+    allow_origins=[*],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
