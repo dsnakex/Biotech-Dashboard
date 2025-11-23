@@ -119,6 +119,42 @@
             display: none;
         }
 
+        .success-message {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .auth-switch {
+            margin-top: 20px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .auth-switch a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 15px;
+            background: white;
+        }
+
         /* DASHBOARD */
         .dashboard {
             display: none;
@@ -496,10 +532,12 @@
     <div id="loginScreen" class="login-container">
         <div class="login-box">
             <h1>🧬 Biotech Dashboard</h1>
-            <p>Sign in to manage your research projects</p>
-            
+            <p id="authSubtitle">Sign in to manage your research projects</p>
+
             <div id="loginError" class="error-message"></div>
-            
+            <div id="successMessage" class="success-message"></div>
+
+            <!-- LOGIN FORM -->
             <form id="loginForm">
                 <div class="form-group">
                     <label>Email</label>
@@ -511,6 +549,36 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Sign In</button>
             </form>
+
+            <!-- REGISTER FORM (hidden by default) -->
+            <form id="registerForm" style="display: none;">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="registerName" placeholder="John Doe" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="registerEmail" placeholder="john@biotech.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="registerPassword" placeholder="Minimum 6 characters" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="registerRole">
+                        <option value="researcher">Researcher</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Create Account</button>
+            </form>
+
+            <div class="auth-switch">
+                <span id="authSwitchText">Don't have an account?</span>
+                <a href="#" id="authSwitchLink" onclick="toggleAuthForm()">Create one</a>
+            </div>
         </div>
     </div>
 
@@ -808,8 +876,80 @@
             const errorDiv = document.getElementById('loginError');
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
-            setTimeout(() => errorDiv.style.display = 'none', 3000);
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
         }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => successDiv.style.display = 'none', 5000);
+        }
+
+        // Toggle between Login and Register forms
+        let isLoginMode = true;
+
+        function toggleAuthForm() {
+            isLoginMode = !isLoginMode;
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            const subtitle = document.getElementById('authSubtitle');
+            const switchText = document.getElementById('authSwitchText');
+            const switchLink = document.getElementById('authSwitchLink');
+
+            if (isLoginMode) {
+                loginForm.style.display = 'block';
+                registerForm.style.display = 'none';
+                subtitle.textContent = 'Sign in to manage your research projects';
+                switchText.textContent = "Don't have an account?";
+                switchLink.textContent = 'Create one';
+            } else {
+                loginForm.style.display = 'none';
+                registerForm.style.display = 'block';
+                subtitle.textContent = 'Create your account';
+                switchText.textContent = 'Already have an account?';
+                switchLink.textContent = 'Sign in';
+            }
+
+            // Hide any error/success messages
+            document.getElementById('loginError').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        // REGISTER
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('registerName').value;
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            const role = document.getElementById('registerRole').value;
+
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password,
+                        full_name: name,
+                        role: role
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    token = data.access_token;
+                    currentUser = data.user;
+                    localStorage.setItem('token', token);
+                    showDashboard();
+                } else {
+                    const error = await response.json();
+                    showError(error.detail || 'Registration failed. Email may already exist.');
+                }
+            } catch (error) {
+                showError('Connection error. Please try again.');
+            }
+        });
 
         // TABS
         function switchTab(tab) {
