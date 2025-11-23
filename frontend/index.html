@@ -348,6 +348,15 @@
             color: white;
         }
 
+        .btn-use {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-use:hover {
+            background: #059669;
+        }
+
         /* MODAL */
         .modal {
             display: none;
@@ -798,6 +807,32 @@
         </div>
     </div>
 
+    <!-- RESOURCE USAGE MODAL -->
+    <div id="usageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Record Usage</h3>
+                <button class="btn-close" onclick="closeModal('usage')">&times;</button>
+            </div>
+            <div id="usageResourceInfo" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 8px;">
+                <strong id="usageResourceName">Resource</strong><br>
+                <small>Available: <span id="usageAvailableStock">0</span> <span id="usageUnit">units</span></small>
+            </div>
+            <form id="usageForm">
+                <input type="hidden" id="usageResourceId">
+                <div class="form-group">
+                    <label>Quantity Used *</label>
+                    <input type="number" step="0.01" id="usageQuantity" required placeholder="Enter quantity">
+                </div>
+                <div class="form-group">
+                    <label>Purpose / Notes *</label>
+                    <input type="text" id="usagePurpose" required placeholder="Ex: Experiment XYZ, Protocol ABC">
+                </div>
+                <button type="submit" class="btn btn-primary" style="background: #10b981;">Record Usage</button>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_URL = 'https://biotech-api.onrender.com/api';
         let token = localStorage.getItem('token');
@@ -938,10 +973,16 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    token = data.access_token;
-                    currentUser = data.user;
-                    localStorage.setItem('token', token);
-                    showDashboard();
+                    // Afficher le message de succès
+                    showSuccess('Account created successfully! Redirecting...');
+
+                    // Attendre 2 secondes puis connecter automatiquement
+                    setTimeout(() => {
+                        token = data.access_token;
+                        currentUser = data.user;
+                        localStorage.setItem('token', token);
+                        showDashboard();
+                    }, 2000);
                 } else {
                     const error = await response.json();
                     showError(error.detail || 'Registration failed. Email may already exist.');
@@ -1332,6 +1373,7 @@
                                     <td><span class="badge badge-${res.status}">${res.status}</span></td>
                                     <td>
                                         <div class="actions">
+                                            <button class="btn btn-sm btn-use" onclick='openUsageModal(${JSON.stringify(res).replace(/'/g, "&apos;")})'>Use</button>
                                             <button class="btn btn-sm btn-edit" onclick='openModal("resource", ${JSON.stringify(res).replace(/'/g, "&apos;")})'>Edit</button>
                                             <button class="btn btn-sm btn-delete" onclick="deleteResource(${res.id})">Delete</button>
                                         </div>
@@ -1391,6 +1433,50 @@
                 alert('Error deleting resource');
             }
         }
+
+        // RESOURCE USAGE
+        function openUsageModal(resource) {
+            document.getElementById('usageResourceId').value = resource.id;
+            document.getElementById('usageResourceName').textContent = resource.name;
+            document.getElementById('usageAvailableStock').textContent = resource.current_stock;
+            document.getElementById('usageUnit').textContent = resource.unit;
+            document.getElementById('usageQuantity').value = '';
+            document.getElementById('usageQuantity').max = resource.current_stock;
+            document.getElementById('usagePurpose').value = '';
+            document.getElementById('usageModal').classList.add('active');
+        }
+
+        document.getElementById('usageForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const resourceId = document.getElementById('usageResourceId').value;
+            const usageData = {
+                quantity_used: parseFloat(document.getElementById('usageQuantity').value),
+                purpose: document.getElementById('usagePurpose').value
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/resources/${resourceId}/usage`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(usageData)
+                });
+
+                if (response.ok) {
+                    closeModal('usage');
+                    loadResources();
+                    alert('Usage recorded successfully! Stock updated.');
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Error recording usage');
+                }
+            } catch (error) {
+                alert('Connection error. Please try again.');
+            }
+        });
 
         // Close modal when clicking outside
         window.onclick = function(event) {
