@@ -357,6 +357,15 @@
             background: #059669;
         }
 
+        .btn-history {
+            background: #8b5cf6;
+            color: white;
+        }
+
+        .btn-history:hover {
+            background: #7c3aed;
+        }
+
         /* MODAL */
         .modal {
             display: none;
@@ -830,6 +839,22 @@
                 </div>
                 <button type="submit" class="btn btn-primary" style="background: #10b981;">Record Usage</button>
             </form>
+        </div>
+    </div>
+
+    <!-- RESOURCE HISTORY MODAL -->
+    <div id="historyModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>Usage History</h3>
+                <button class="btn-close" onclick="closeModal('history')">&times;</button>
+            </div>
+            <div id="historyResourceInfo" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 8px;">
+                <strong id="historyResourceName">Resource</strong>
+            </div>
+            <div id="historyContent">
+                <div class="loading">Loading history...</div>
+            </div>
         </div>
     </div>
 
@@ -1374,6 +1399,7 @@
                                     <td>
                                         <div class="actions">
                                             <button class="btn btn-sm btn-use" onclick='openUsageModal(${JSON.stringify(res).replace(/'/g, "&apos;")})'>Use</button>
+                                            <button class="btn btn-sm btn-history" onclick='openHistoryModal(${JSON.stringify(res).replace(/'/g, "&apos;")})'>History</button>
                                             <button class="btn btn-sm btn-edit" onclick='openModal("resource", ${JSON.stringify(res).replace(/'/g, "&apos;")})'>Edit</button>
                                             <button class="btn btn-sm btn-delete" onclick="deleteResource(${res.id})">Delete</button>
                                         </div>
@@ -1431,6 +1457,51 @@
                 loadResources();
             } catch (error) {
                 alert('Error deleting resource');
+            }
+        }
+
+        // RESOURCE USAGE HISTORY
+        async function openHistoryModal(resource) {
+            document.getElementById('historyResourceName').textContent = `${resource.name} (${resource.current_stock} / ${resource.initial_stock} ${resource.unit})`;
+            document.getElementById('historyModal').classList.add('active');
+            document.getElementById('historyContent').innerHTML = '<div class="loading">Loading history...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/resources/${resource.id}/usage`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const history = await response.json();
+
+                if (history.length === 0) {
+                    document.getElementById('historyContent').innerHTML = '<div class="empty-state">No usage history yet.</div>';
+                    return;
+                }
+
+                document.getElementById('historyContent').innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Quantity</th>
+                                <th>Purpose</th>
+                                <th>Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${history.map(h => `
+                                <tr>
+                                    <td><small>${new Date(h.used_at).toLocaleString('fr-FR')}</small></td>
+                                    <td><strong style="color: #ef4444;">-${h.quantity_used}</strong> ${resource.unit}</td>
+                                    <td>${h.purpose}</td>
+                                    <td><small>${h.stock_before} → ${h.stock_after}</small></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (error) {
+                document.getElementById('historyContent').innerHTML = '<div class="empty-state">Error loading history</div>';
             }
         }
 
