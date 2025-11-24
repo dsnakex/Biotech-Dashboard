@@ -611,6 +611,82 @@ async def delete_task(task_id: int, current_user: dict = Depends(get_current_use
 
         return {"message": "Task deleted successfully"}
 
+# ==================== ROUTES EXPERIMENTS (Protégées) ====================
+
+@app.get("/api/experiments", response_model=List[Experiment])
+async def get_experiments(
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer toutes les expériences"""
+    with get_db() as conn:
+        query = "SELECT * FROM experiments WHERE 1=1"
+        params = []
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY start_date DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(sql(query), params)
+        experiments = cursor.fetchall()
+
+        return [dict(exp) for exp in experiments]
+
+@app.post("/api/experiments", response_model=Experiment)
+async def create_experiment(experiment: ExperimentCreate, current_user: dict = Depends(get_current_user)):
+    """Créer une nouvelle expérience"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            INSERT INTO experiments (title, protocol_type, assignee, status, start_date, end_date, description, results, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results, current_user['id']))
+        conn.commit()
+
+        exp_id = get_last_id(cursor, conn)
+        cursor.execute(sql("SELECT * FROM experiments WHERE id = ?"), (exp_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/experiments/{experiment_id}", response_model=Experiment)
+async def update_experiment(
+    experiment_id: int,
+    experiment: ExperimentCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mettre à jour une expérience"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            UPDATE experiments
+            SET title=?, protocol_type=?, assignee=?, status=?, start_date=?, end_date=?, description=?, results=?
+            WHERE id=?
+        """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+
+        cursor.execute(sql("SELECT * FROM experiments WHERE id = ?"), (experiment_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/experiments/{experiment_id}")
+async def delete_experiment(experiment_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer une expérience"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("DELETE FROM experiments WHERE id = ?"), (experiment_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+
+        return {"message": "Experiment deleted successfully"}
+
 # ==================== ROUTES RESOURCES (Gestion de Stock) ====================
 
 def calculate_resource_status(current_stock: float, initial_stock: float) -> str:
