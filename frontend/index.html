@@ -288,6 +288,107 @@
             margin-bottom: 20px;
         }
 
+        /* BREADCRUMB */
+        .breadcrumb {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: var(--shadow);
+        }
+
+        .breadcrumb-item {
+            color: var(--primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            color: var(--text-secondary);
+        }
+
+        /* PROJECT HIERARCHY */
+        .project-item, .subproject-item, .category-item {
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .project-item:hover, .subproject-item:hover, .category-item:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+
+        .project-item h4, .subproject-item h4, .category-item h4 {
+            margin: 0 0 8px 0;
+            color: var(--text-primary);
+            font-size: 18px;
+        }
+
+        .project-meta {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-on_hold {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-completed {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-archived {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .category-item {
+            border-left: 4px solid;
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -614,6 +715,7 @@
             <!-- TABS -->
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('tasks')">📋 Tasks</button>
+                <button class="tab" onclick="switchTab('projects')">🗂️ Projects</button>
                 <button class="tab" onclick="switchTab('gantt')">📊 Gantt</button>
                 <button class="tab" onclick="switchTab('experiments')">🧪 Experiments</button>
                 <button class="tab" onclick="switchTab('resources')">📦 Resources</button>
@@ -643,6 +745,50 @@
 
                 <div class="card">
                     <div id="tasksContent"></div>
+                </div>
+            </div>
+
+            <!-- PROJECTS TAB -->
+            <div id="projectsTab" class="tab-content">
+                <div class="section-header">
+                    <h2>🗂️ Project Hierarchy</h2>
+                    <button class="btn btn-secondary" onclick="openModal('project')">+ New Project</button>
+                </div>
+
+                <!-- Breadcrumb Navigation -->
+                <div id="projectBreadcrumb" class="breadcrumb" style="display:none;"></div>
+
+                <!-- Projects List View -->
+                <div id="projectsView" class="card">
+                    <h3>Projects</h3>
+                    <div id="projectsList"></div>
+                </div>
+
+                <!-- Sub-Projects List View -->
+                <div id="subProjectsView" class="card" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>Sub-Projects</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="openModal('subproject')">+ New Sub-Project</button>
+                    </div>
+                    <div id="subProjectsList"></div>
+                </div>
+
+                <!-- Categories List View -->
+                <div id="categoriesView" class="card" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>Categories</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="openModal('category')">+ New Category</button>
+                    </div>
+                    <div id="categoriesList"></div>
+                </div>
+
+                <!-- Experiments in Category View -->
+                <div id="categoryExperimentsView" class="card" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>Experiments in this Category</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="linkExperimentToCategory()">+ Link Experiment</button>
+                    </div>
+                    <div id="categoryExperimentsList"></div>
                 </div>
             </div>
 
@@ -858,8 +1004,122 @@
         </div>
     </div>
 
+    <!-- PROJECT MODAL -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="projectModalTitle">New Project</h3>
+                <button class="btn-close" onclick="closeModal('project')">&times;</button>
+            </div>
+            <form id="projectForm">
+                <input type="hidden" id="projectId">
+                <div class="form-group">
+                    <label>Project Name *</label>
+                    <input type="text" id="projectName" required placeholder="Ex: Cancer Research Initiative">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="projectDescription" rows="3" placeholder="Project description..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Status *</label>
+                    <select id="projectStatus" required>
+                        <option value="active">Active</option>
+                        <option value="on_hold">On Hold</option>
+                        <option value="completed">Completed</option>
+                        <option value="archived">Archived</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Manager</label>
+                    <input type="text" id="projectManager" placeholder="Ex: Dr. Smith">
+                </div>
+                <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="date" id="projectStartDate">
+                </div>
+                <div class="form-group">
+                    <label>End Date</label>
+                    <input type="date" id="projectEndDate">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Project</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SUB-PROJECT MODAL -->
+    <div id="subprojectModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="subprojectModalTitle">New Sub-Project</h3>
+                <button class="btn-close" onclick="closeModal('subproject')">&times;</button>
+            </div>
+            <form id="subprojectForm">
+                <input type="hidden" id="subprojectId">
+                <input type="hidden" id="subprojectProjectId">
+                <div class="form-group">
+                    <label>Sub-Project Name *</label>
+                    <input type="text" id="subprojectName" required placeholder="Ex: Phase 1 Clinical Trials">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="subprojectDescription" rows="3" placeholder="Sub-project description..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Status *</label>
+                    <select id="subprojectStatus" required>
+                        <option value="active">Active</option>
+                        <option value="on_hold">On Hold</option>
+                        <option value="completed">Completed</option>
+                        <option value="archived">Archived</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Manager</label>
+                    <input type="text" id="subprojectManager" placeholder="Ex: Dr. Jones">
+                </div>
+                <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="date" id="subprojectStartDate">
+                </div>
+                <div class="form-group">
+                    <label>End Date</label>
+                    <input type="date" id="subprojectEndDate">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Sub-Project</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- CATEGORY MODAL -->
+    <div id="categoryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="categoryModalTitle">New Category</h3>
+                <button class="btn-close" onclick="closeModal('category')">&times;</button>
+            </div>
+            <form id="categoryForm">
+                <input type="hidden" id="categoryId">
+                <input type="hidden" id="categorySubProjectId">
+                <div class="form-group">
+                    <label>Category Name *</label>
+                    <input type="text" id="categoryName" required placeholder="Ex: In Vitro Studies">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="categoryDescription" rows="3" placeholder="Category description..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <input type="color" id="categoryColor" value="#3b82f6">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Category</button>
+            </form>
+        </div>
+    </div>
+
     <script>
-        const API_URL = 'https://biotech-api.onrender.com/api';
+        const API_URL = 'http://localhost:8000/api';
         let token = localStorage.getItem('token');
         let currentUser = null;
 
@@ -1021,9 +1281,14 @@
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
+
             event.target.classList.add('active');
             document.getElementById(tab + 'Tab').classList.add('active');
+
+            // Load data for specific tabs
+            if (tab === 'projects') {
+                navigateToProjects();
+            }
         }
 
         // MODALS
@@ -1555,6 +1820,556 @@
                 event.target.classList.remove('active');
             }
         }
+
+        // ==================== PROJECT HIERARCHY MANAGEMENT ====================
+
+        let currentProject = null;
+        let currentSubProject = null;
+        let currentCategory = null;
+
+        // PROJECTS
+        async function loadProjects() {
+            try {
+                const response = await fetch(`${API_URL}/projects`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const projects = await response.json();
+                    displayProjects(projects);
+                } else {
+                    console.error('Error loading projects');
+                }
+            } catch (error) {
+                console.error('Connection error:', error);
+            }
+        }
+
+        function displayProjects(projects) {
+            const container = document.getElementById('projectsList');
+
+            if (projects.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No projects yet. Create your first project!</p>';
+                return;
+            }
+
+            container.innerHTML = projects.map(project => `
+                <div class="project-item" onclick="event.stopPropagation(); selectProject(${project.id})">
+                    <h4>📁 ${project.name}</h4>
+                    <p style="color: var(--text-secondary); margin: 5px 0;">${project.description || 'No description'}</p>
+                    <div class="project-meta">
+                        <span class="status-badge status-${project.status}">${project.status.replace('_', ' ').toUpperCase()}</span>
+                        ${project.manager ? `<span>👤 ${project.manager}</span>` : ''}
+                        ${project.start_date ? `<span>📅 ${project.start_date}</span>` : ''}
+                    </div>
+                    <div class="item-actions" onclick="event.stopPropagation();">
+                        <button class="btn btn-sm" style="background: var(--primary);" onclick="editProject(${project.id})">Edit</button>
+                        <button class="btn btn-sm" style="background: var(--danger);" onclick="deleteProject(${project.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectProject(projectId) {
+            fetch(`${API_URL}/projects/${projectId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => res.json())
+            .then(project => {
+                currentProject = project;
+                currentSubProject = null;
+                currentCategory = null;
+
+                updateBreadcrumb();
+                loadSubProjects(projectId);
+
+                document.getElementById('projectsView').style.display = 'none';
+                document.getElementById('subProjectsView').style.display = 'block';
+                document.getElementById('categoriesView').style.display = 'none';
+                document.getElementById('categoryExperimentsView').style.display = 'none';
+            });
+        }
+
+        async function loadSubProjects(projectId) {
+            try {
+                const response = await fetch(`${API_URL}/sub-projects?project_id=${projectId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const subProjects = await response.json();
+                    displaySubProjects(subProjects);
+                }
+            } catch (error) {
+                console.error('Error loading sub-projects:', error);
+            }
+        }
+
+        function displaySubProjects(subProjects) {
+            const container = document.getElementById('subProjectsList');
+
+            if (subProjects.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No sub-projects yet. Create one!</p>';
+                return;
+            }
+
+            container.innerHTML = subProjects.map(sp => `
+                <div class="subproject-item" onclick="event.stopPropagation(); selectSubProject(${sp.id})">
+                    <h4>📂 ${sp.name}</h4>
+                    <p style="color: var(--text-secondary); margin: 5px 0;">${sp.description || 'No description'}</p>
+                    <div class="project-meta">
+                        <span class="status-badge status-${sp.status}">${sp.status.replace('_', ' ').toUpperCase()}</span>
+                        ${sp.manager ? `<span>👤 ${sp.manager}</span>` : ''}
+                        ${sp.start_date ? `<span>📅 ${sp.start_date}</span>` : ''}
+                    </div>
+                    <div class="item-actions" onclick="event.stopPropagation();">
+                        <button class="btn btn-sm" style="background: var(--primary);" onclick="editSubProject(${sp.id})">Edit</button>
+                        <button class="btn btn-sm" style="background: var(--danger);" onclick="deleteSubProject(${sp.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectSubProject(subProjectId) {
+            fetch(`${API_URL}/sub-projects/${subProjectId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => res.json())
+            .then(subProject => {
+                currentSubProject = subProject;
+                currentCategory = null;
+
+                updateBreadcrumb();
+                loadCategories(subProjectId);
+
+                document.getElementById('subProjectsView').style.display = 'none';
+                document.getElementById('categoriesView').style.display = 'block';
+                document.getElementById('categoryExperimentsView').style.display = 'none';
+            });
+        }
+
+        async function loadCategories(subProjectId) {
+            try {
+                const response = await fetch(`${API_URL}/categories?sub_project_id=${subProjectId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const categories = await response.json();
+                    displayCategories(categories);
+                }
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+
+        function displayCategories(categories) {
+            const container = document.getElementById('categoriesList');
+
+            if (categories.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No categories yet. Create one!</p>';
+                return;
+            }
+
+            container.innerHTML = categories.map(cat => `
+                <div class="category-item" style="border-left-color: ${cat.color};" onclick="event.stopPropagation(); selectCategory(${cat.id})">
+                    <h4>🏷️ ${cat.name}</h4>
+                    <p style="color: var(--text-secondary); margin: 5px 0;">${cat.description || 'No description'}</p>
+                    <div class="item-actions" onclick="event.stopPropagation();">
+                        <button class="btn btn-sm" style="background: var(--primary);" onclick="editCategory(${cat.id})">Edit</button>
+                        <button class="btn btn-sm" style="background: var(--danger);" onclick="deleteCategory(${cat.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectCategory(categoryId) {
+            fetch(`${API_URL}/categories/${categoryId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => res.json())
+            .then(category => {
+                currentCategory = category;
+
+                updateBreadcrumb();
+                loadCategoryExperiments(categoryId);
+
+                document.getElementById('categoriesView').style.display = 'none';
+                document.getElementById('categoryExperimentsView').style.display = 'block';
+            });
+        }
+
+        async function loadCategoryExperiments(categoryId) {
+            try {
+                const response = await fetch(`${API_URL}/experiments`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const allExperiments = await response.json();
+                    const categoryExperiments = allExperiments.filter(exp => exp.category_id === categoryId);
+                    displayCategoryExperiments(categoryExperiments);
+                }
+            } catch (error) {
+                console.error('Error loading experiments:', error);
+            }
+        }
+
+        function displayCategoryExperiments(experiments) {
+            const container = document.getElementById('categoryExperimentsList');
+
+            if (experiments.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No experiments in this category yet.</p>';
+                return;
+            }
+
+            container.innerHTML = experiments.map(exp => `
+                <div style="background: white; border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                    <h4 style="margin: 0 0 8px 0;">🧪 ${exp.title}</h4>
+                    <p style="color: var(--text-secondary); margin: 5px 0; font-size: 14px;">${exp.protocol_type} - ${exp.assignee}</p>
+                    <div class="project-meta">
+                        <span class="status-badge status-${exp.status}">${exp.status.toUpperCase()}</span>
+                        <span>📅 ${exp.start_date} → ${exp.end_date}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // BREADCRUMB NAVIGATION
+        function updateBreadcrumb() {
+            const breadcrumb = document.getElementById('projectBreadcrumb');
+            let html = '<span class="breadcrumb-item" onclick="navigateToProjects()">🗂️ Projects</span>';
+
+            if (currentProject) {
+                html += ' <span class="breadcrumb-separator">›</span> ';
+                html += `<span class="breadcrumb-item" onclick="navigateToProject(${currentProject.id})">${currentProject.name}</span>`;
+            }
+
+            if (currentSubProject) {
+                html += ' <span class="breadcrumb-separator">›</span> ';
+                html += `<span class="breadcrumb-item" onclick="navigateToSubProject(${currentSubProject.id})">${currentSubProject.name}</span>`;
+            }
+
+            if (currentCategory) {
+                html += ' <span class="breadcrumb-separator">›</span> ';
+                html += `<span class="breadcrumb-item" style="cursor: default;">${currentCategory.name}</span>`;
+            }
+
+            breadcrumb.innerHTML = html;
+            breadcrumb.style.display = currentProject ? 'flex' : 'none';
+        }
+
+        function navigateToProjects() {
+            currentProject = null;
+            currentSubProject = null;
+            currentCategory = null;
+
+            document.getElementById('projectsView').style.display = 'block';
+            document.getElementById('subProjectsView').style.display = 'none';
+            document.getElementById('categoriesView').style.display = 'none';
+            document.getElementById('categoryExperimentsView').style.display = 'none';
+            document.getElementById('projectBreadcrumb').style.display = 'none';
+
+            loadProjects();
+        }
+
+        function navigateToProject(projectId) {
+            selectProject(projectId);
+        }
+
+        function navigateToSubProject(subProjectId) {
+            selectSubProject(subProjectId);
+        }
+
+        // CRUD OPERATIONS - PROJECT
+        async function editProject(projectId) {
+            event.stopPropagation();
+
+            try {
+                const response = await fetch(`${API_URL}/projects/${projectId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const project = await response.json();
+                    document.getElementById('projectId').value = project.id;
+                    document.getElementById('projectName').value = project.name;
+                    document.getElementById('projectDescription').value = project.description || '';
+                    document.getElementById('projectStatus').value = project.status;
+                    document.getElementById('projectManager').value = project.manager || '';
+                    document.getElementById('projectStartDate').value = project.start_date || '';
+                    document.getElementById('projectEndDate').value = project.end_date || '';
+                    document.getElementById('projectModalTitle').textContent = 'Edit Project';
+                    document.getElementById('projectModal').classList.add('active');
+                }
+            } catch (error) {
+                alert('Error loading project');
+            }
+        }
+
+        async function deleteProject(projectId) {
+            event.stopPropagation();
+
+            if (!confirm('Delete this project? This will also delete all sub-projects, categories, and experiments.')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/projects/${projectId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    loadProjects();
+                    alert('Project deleted successfully');
+                } else {
+                    alert('Error deleting project');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        }
+
+        document.getElementById('projectForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const projectId = document.getElementById('projectId').value;
+            const projectData = {
+                name: document.getElementById('projectName').value,
+                description: document.getElementById('projectDescription').value,
+                status: document.getElementById('projectStatus').value,
+                manager: document.getElementById('projectManager').value || null,
+                start_date: document.getElementById('projectStartDate').value || null,
+                end_date: document.getElementById('projectEndDate').value || null
+            };
+
+            const url = projectId ? `${API_URL}/projects/${projectId}` : `${API_URL}/projects`;
+            const method = projectId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(projectData)
+                });
+
+                if (response.ok) {
+                    closeModal('project');
+                    loadProjects();
+                } else {
+                    alert('Error saving project');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        });
+
+        // CRUD OPERATIONS - SUB-PROJECT
+        async function editSubProject(subProjectId) {
+            event.stopPropagation();
+
+            try {
+                const response = await fetch(`${API_URL}/sub-projects/${subProjectId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const subProject = await response.json();
+                    document.getElementById('subprojectId').value = subProject.id;
+                    document.getElementById('subprojectProjectId').value = subProject.project_id;
+                    document.getElementById('subprojectName').value = subProject.name;
+                    document.getElementById('subprojectDescription').value = subProject.description || '';
+                    document.getElementById('subprojectStatus').value = subProject.status;
+                    document.getElementById('subprojectManager').value = subProject.manager || '';
+                    document.getElementById('subprojectStartDate').value = subProject.start_date || '';
+                    document.getElementById('subprojectEndDate').value = subProject.end_date || '';
+                    document.getElementById('subprojectModalTitle').textContent = 'Edit Sub-Project';
+                    document.getElementById('subprojectModal').classList.add('active');
+                }
+            } catch (error) {
+                alert('Error loading sub-project');
+            }
+        }
+
+        async function deleteSubProject(subProjectId) {
+            event.stopPropagation();
+
+            if (!confirm('Delete this sub-project? This will also delete all categories and experiments.')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/sub-projects/${subProjectId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    loadSubProjects(currentProject.id);
+                    alert('Sub-project deleted successfully');
+                } else {
+                    alert('Error deleting sub-project');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        }
+
+        document.getElementById('subprojectForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const subProjectId = document.getElementById('subprojectId').value;
+            const subProjectData = {
+                project_id: document.getElementById('subprojectProjectId').value || currentProject.id,
+                name: document.getElementById('subprojectName').value,
+                description: document.getElementById('subprojectDescription').value,
+                status: document.getElementById('subprojectStatus').value,
+                manager: document.getElementById('subprojectManager').value || null,
+                start_date: document.getElementById('subprojectStartDate').value || null,
+                end_date: document.getElementById('subprojectEndDate').value || null
+            };
+
+            const url = subProjectId ? `${API_URL}/sub-projects/${subProjectId}` : `${API_URL}/sub-projects`;
+            const method = subProjectId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(subProjectData)
+                });
+
+                if (response.ok) {
+                    closeModal('subproject');
+                    loadSubProjects(currentProject.id);
+                } else {
+                    alert('Error saving sub-project');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        });
+
+        // CRUD OPERATIONS - CATEGORY
+        async function editCategory(categoryId) {
+            event.stopPropagation();
+
+            try {
+                const response = await fetch(`${API_URL}/categories/${categoryId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const category = await response.json();
+                    document.getElementById('categoryId').value = category.id;
+                    document.getElementById('categorySubProjectId').value = category.sub_project_id;
+                    document.getElementById('categoryName').value = category.name;
+                    document.getElementById('categoryDescription').value = category.description || '';
+                    document.getElementById('categoryColor').value = category.color || '#3b82f6';
+                    document.getElementById('categoryModalTitle').textContent = 'Edit Category';
+                    document.getElementById('categoryModal').classList.add('active');
+                }
+            } catch (error) {
+                alert('Error loading category');
+            }
+        }
+
+        async function deleteCategory(categoryId) {
+            event.stopPropagation();
+
+            if (!confirm('Delete this category? Experiments in this category will be unlinked.')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/categories/${categoryId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    loadCategories(currentSubProject.id);
+                    alert('Category deleted successfully');
+                } else {
+                    alert('Error deleting category');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        }
+
+        document.getElementById('categoryForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const categoryId = document.getElementById('categoryId').value;
+            const categoryData = {
+                sub_project_id: document.getElementById('categorySubProjectId').value || currentSubProject.id,
+                name: document.getElementById('categoryName').value,
+                description: document.getElementById('categoryDescription').value,
+                color: document.getElementById('categoryColor').value
+            };
+
+            const url = categoryId ? `${API_URL}/categories/${categoryId}` : `${API_URL}/categories`;
+            const method = categoryId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(categoryData)
+                });
+
+                if (response.ok) {
+                    closeModal('category');
+                    loadCategories(currentSubProject.id);
+                } else {
+                    alert('Error saving category');
+                }
+            } catch (error) {
+                alert('Connection error');
+            }
+        });
+
+        // Override openModal for hierarchy
+        const originalOpenModal = openModal;
+        openModal = function(type, item = null) {
+            if (type === 'subproject' && !item) {
+                document.getElementById('subprojectId').value = '';
+                document.getElementById('subprojectProjectId').value = currentProject?.id || '';
+                document.getElementById('subprojectName').value = '';
+                document.getElementById('subprojectDescription').value = '';
+                document.getElementById('subprojectStatus').value = 'active';
+                document.getElementById('subprojectManager').value = '';
+                document.getElementById('subprojectStartDate').value = '';
+                document.getElementById('subprojectEndDate').value = '';
+                document.getElementById('subprojectModalTitle').textContent = 'New Sub-Project';
+                document.getElementById('subprojectModal').classList.add('active');
+            } else if (type === 'category' && !item) {
+                document.getElementById('categoryId').value = '';
+                document.getElementById('categorySubProjectId').value = currentSubProject?.id || '';
+                document.getElementById('categoryName').value = '';
+                document.getElementById('categoryDescription').value = '';
+                document.getElementById('categoryColor').value = '#3b82f6';
+                document.getElementById('categoryModalTitle').textContent = 'New Category';
+                document.getElementById('categoryModal').classList.add('active');
+            } else if (type === 'project' && !item) {
+                document.getElementById('projectId').value = '';
+                document.getElementById('projectName').value = '';
+                document.getElementById('projectDescription').value = '';
+                document.getElementById('projectStatus').value = 'active';
+                document.getElementById('projectManager').value = '';
+                document.getElementById('projectStartDate').value = '';
+                document.getElementById('projectEndDate').value = '';
+                document.getElementById('projectModalTitle').textContent = 'New Project';
+                document.getElementById('projectModal').classList.add('active');
+            } else {
+                originalOpenModal(type, item);
+            }
+        };
     </script>
 </body>
 </html>
