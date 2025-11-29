@@ -152,6 +152,7 @@ class ExperimentBase(BaseModel):
     end_date: date
     description: Optional[str] = None
     results: Optional[str] = None
+    category_id: Optional[int] = None  # Lien vers la catégorie
 
 class ExperimentCreate(ExperimentBase):
     pass
@@ -194,6 +195,51 @@ class ResourceUsage(BaseModel):
 class RestockRequest(BaseModel):
     quantity: float
     lot_number: Optional[str] = None
+
+# Modèles pour la hiérarchie Projects → Sub-projects → Categories → Experiments
+class ProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    status: str = "active"  # active, on_hold, completed, archived
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    manager: Optional[str] = None
+
+class ProjectCreate(ProjectBase):
+    pass
+
+class Project(ProjectBase):
+    id: int
+    created_at: datetime
+
+class SubProjectBase(BaseModel):
+    project_id: int
+    name: str
+    description: Optional[str] = None
+    status: str = "active"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    manager: Optional[str] = None
+
+class SubProjectCreate(SubProjectBase):
+    pass
+
+class SubProject(SubProjectBase):
+    id: int
+    created_at: datetime
+
+class CategoryBase(BaseModel):
+    sub_project_id: int
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = "#3b82f6"  # Couleur pour l'UI
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class Category(CategoryBase):
+    id: int
+    created_at: datetime
 
 # ==================== FONCTIONS UTILITAIRES ====================
 
@@ -297,6 +343,50 @@ def init_db():
                 )
             """)
 
+            # Table des projets (hiérarchie niveau 1)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS projects (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    status VARCHAR(50) DEFAULT 'active',
+                    start_date DATE,
+                    end_date DATE,
+                    manager VARCHAR(255),
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Table des sous-projets (hiérarchie niveau 2)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sub_projects (
+                    id SERIAL PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    status VARCHAR(50) DEFAULT 'active',
+                    start_date DATE,
+                    end_date DATE,
+                    manager VARCHAR(255),
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Table des catégories (hiérarchie niveau 3)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS categories (
+                    id SERIAL PRIMARY KEY,
+                    sub_project_id INTEGER NOT NULL REFERENCES sub_projects(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    color VARCHAR(20) DEFAULT '#3b82f6',
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Table des expériences
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS experiments (
@@ -309,6 +399,7 @@ def init_db():
                     end_date DATE,
                     description TEXT,
                     results TEXT,
+                    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -379,6 +470,55 @@ def init_db():
                 )
             """)
 
+            # Table des projets (hiérarchie niveau 1)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT DEFAULT 'active',
+                    start_date DATE,
+                    end_date DATE,
+                    manager TEXT,
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (created_by) REFERENCES users(id)
+                )
+            """)
+
+            # Table des sous-projets (hiérarchie niveau 2)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sub_projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT DEFAULT 'active',
+                    start_date DATE,
+                    end_date DATE,
+                    manager TEXT,
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (created_by) REFERENCES users(id)
+                )
+            """)
+
+            # Table des catégories (hiérarchie niveau 3)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sub_project_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    color TEXT DEFAULT '#3b82f6',
+                    created_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (sub_project_id) REFERENCES sub_projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (created_by) REFERENCES users(id)
+                )
+            """)
+
             # Table des expériences
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS experiments (
@@ -391,8 +531,10 @@ def init_db():
                     end_date DATE,
                     description TEXT,
                     results TEXT,
+                    category_id INTEGER,
                     created_by INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
                     FOREIGN KEY (created_by) REFERENCES users(id)
                 )
             """)
@@ -611,6 +753,316 @@ async def delete_task(task_id: int, current_user: dict = Depends(get_current_use
 
         return {"message": "Task deleted successfully"}
 
+# ==================== ROUTES PROJECTS HIERARCHY (Protégées) ====================
+
+# ----- PROJECTS (Niveau 1) -----
+
+@app.get("/api/projects", response_model=List[Project])
+async def get_projects(
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer tous les projets"""
+    with get_db() as conn:
+        query = "SELECT * FROM projects WHERE 1=1"
+        params = []
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(sql(query), params)
+        projects = cursor.fetchall()
+
+        return [dict(p) for p in projects]
+
+@app.get("/api/projects/{project_id}", response_model=Project)
+async def get_project(project_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer un projet spécifique"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("SELECT * FROM projects WHERE id = ?"), (project_id,))
+        project = cursor.fetchone()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        return dict(project)
+
+@app.post("/api/projects", response_model=Project)
+async def create_project(project: ProjectCreate, current_user: dict = Depends(get_current_user)):
+    """Créer un nouveau projet"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            INSERT INTO projects (name, description, status, start_date, end_date, manager, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """), (project.name, project.description, project.status, project.start_date,
+              project.end_date, project.manager, current_user['id']))
+        conn.commit()
+
+        project_id = get_last_id(cursor, conn)
+        cursor.execute(sql("SELECT * FROM projects WHERE id = ?"), (project_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/projects/{project_id}", response_model=Project)
+async def update_project(
+    project_id: int,
+    project: ProjectCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mettre à jour un projet"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            UPDATE projects
+            SET name=?, description=?, status=?, start_date=?, end_date=?, manager=?
+            WHERE id=?
+        """), (project.name, project.description, project.status, project.start_date,
+              project.end_date, project.manager, project_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        cursor.execute(sql("SELECT * FROM projects WHERE id = ?"), (project_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer un projet (cascade delete pour sub-projects, categories, experiments)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("DELETE FROM projects WHERE id = ?"), (project_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        return {"message": "Project deleted successfully"}
+
+# ----- SUB-PROJECTS (Niveau 2) -----
+
+@app.get("/api/sub-projects", response_model=List[SubProject])
+async def get_sub_projects(
+    project_id: Optional[int] = None,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer tous les sous-projets (optionnel: filtrés par projet)"""
+    with get_db() as conn:
+        query = "SELECT * FROM sub_projects WHERE 1=1"
+        params = []
+
+        if project_id:
+            query += " AND project_id = ?"
+            params.append(project_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(sql(query), params)
+        sub_projects = cursor.fetchall()
+
+        return [dict(sp) for sp in sub_projects]
+
+@app.get("/api/sub-projects/{sub_project_id}", response_model=SubProject)
+async def get_sub_project(sub_project_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer un sous-projet spécifique"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("SELECT * FROM sub_projects WHERE id = ?"), (sub_project_id,))
+        sub_project = cursor.fetchone()
+
+        if not sub_project:
+            raise HTTPException(status_code=404, detail="Sub-project not found")
+
+        return dict(sub_project)
+
+@app.post("/api/sub-projects", response_model=SubProject)
+async def create_sub_project(sub_project: SubProjectCreate, current_user: dict = Depends(get_current_user)):
+    """Créer un nouveau sous-projet"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            INSERT INTO sub_projects (project_id, name, description, status, start_date, end_date, manager, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """), (sub_project.project_id, sub_project.name, sub_project.description, sub_project.status,
+              sub_project.start_date, sub_project.end_date, sub_project.manager, current_user['id']))
+        conn.commit()
+
+        sub_project_id = get_last_id(cursor, conn)
+        cursor.execute(sql("SELECT * FROM sub_projects WHERE id = ?"), (sub_project_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/sub-projects/{sub_project_id}", response_model=SubProject)
+async def update_sub_project(
+    sub_project_id: int,
+    sub_project: SubProjectCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mettre à jour un sous-projet"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            UPDATE sub_projects
+            SET project_id=?, name=?, description=?, status=?, start_date=?, end_date=?, manager=?
+            WHERE id=?
+        """), (sub_project.project_id, sub_project.name, sub_project.description, sub_project.status,
+              sub_project.start_date, sub_project.end_date, sub_project.manager, sub_project_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Sub-project not found")
+
+        cursor.execute(sql("SELECT * FROM sub_projects WHERE id = ?"), (sub_project_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/sub-projects/{sub_project_id}")
+async def delete_sub_project(sub_project_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer un sous-projet (cascade delete pour categories et experiments)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("DELETE FROM sub_projects WHERE id = ?"), (sub_project_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Sub-project not found")
+
+        return {"message": "Sub-project deleted successfully"}
+
+# ----- CATEGORIES (Niveau 3) -----
+
+@app.get("/api/categories", response_model=List[Category])
+async def get_categories(
+    sub_project_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Récupérer toutes les catégories (optionnel: filtrées par sous-projet)"""
+    with get_db() as conn:
+        query = "SELECT * FROM categories WHERE 1=1"
+        params = []
+
+        if sub_project_id:
+            query += " AND sub_project_id = ?"
+            params.append(sub_project_id)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(sql(query), params)
+        categories = cursor.fetchall()
+
+        return [dict(c) for c in categories]
+
+@app.get("/api/categories/{category_id}", response_model=Category)
+async def get_category(category_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer une catégorie spécifique"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("SELECT * FROM categories WHERE id = ?"), (category_id,))
+        category = cursor.fetchone()
+
+        if not category:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        return dict(category)
+
+@app.post("/api/categories", response_model=Category)
+async def create_category(category: CategoryCreate, current_user: dict = Depends(get_current_user)):
+    """Créer une nouvelle catégorie"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            INSERT INTO categories (sub_project_id, name, description, color, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        """), (category.sub_project_id, category.name, category.description,
+              category.color, current_user['id']))
+        conn.commit()
+
+        category_id = get_last_id(cursor, conn)
+        cursor.execute(sql("SELECT * FROM categories WHERE id = ?"), (category_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/categories/{category_id}", response_model=Category)
+async def update_category(
+    category_id: int,
+    category: CategoryCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mettre à jour une catégorie"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            UPDATE categories
+            SET sub_project_id=?, name=?, description=?, color=?
+            WHERE id=?
+        """), (category.sub_project_id, category.name, category.description,
+              category.color, category_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        cursor.execute(sql("SELECT * FROM categories WHERE id = ?"), (category_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/categories/{category_id}")
+async def delete_category(category_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer une catégorie (experiments liées passent à NULL)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("DELETE FROM categories WHERE id = ?"), (category_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        return {"message": "Category deleted successfully"}
+
+# ----- ENDPOINTS SPÉCIAUX POUR LA HIÉRARCHIE -----
+
+@app.get("/api/projects/{project_id}/hierarchy")
+async def get_project_hierarchy(project_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer la hiérarchie complète d'un projet (avec sub-projects, categories, et experiments)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Récupérer le projet
+        cursor.execute(sql("SELECT * FROM projects WHERE id = ?"), (project_id,))
+        project = cursor.fetchone()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        project_dict = dict(project)
+
+        # Récupérer les sous-projets
+        cursor.execute(sql("SELECT * FROM sub_projects WHERE project_id = ?"), (project_id,))
+        sub_projects = [dict(sp) for sp in cursor.fetchall()]
+
+        # Pour chaque sous-projet, récupérer les catégories et expériences
+        for sp in sub_projects:
+            cursor.execute(sql("SELECT * FROM categories WHERE sub_project_id = ?"), (sp['id'],))
+            categories = [dict(c) for c in cursor.fetchall()]
+
+            # Pour chaque catégorie, récupérer les expériences
+            for cat in categories:
+                cursor.execute(sql("SELECT * FROM experiments WHERE category_id = ?"), (cat['id'],))
+                cat['experiments'] = [dict(exp) for exp in cursor.fetchall()]
+
+            sp['categories'] = categories
+
+        project_dict['sub_projects'] = sub_projects
+
+        return project_dict
+
 # ==================== ROUTES EXPERIMENTS (Protégées) ====================
 
 @app.get("/api/experiments", response_model=List[Experiment])
@@ -641,10 +1093,10 @@ async def create_experiment(experiment: ExperimentCreate, current_user: dict = D
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(sql("""
-            INSERT INTO experiments (title, protocol_type, assignee, status, start_date, end_date, description, results, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO experiments (title, protocol_type, assignee, status, start_date, end_date, description, results, category_id, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
-              experiment.start_date, experiment.end_date, experiment.description, experiment.results, current_user['id']))
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment.category_id, current_user['id']))
         conn.commit()
 
         exp_id = get_last_id(cursor, conn)
@@ -662,10 +1114,10 @@ async def update_experiment(
         cursor = conn.cursor()
         cursor.execute(sql("""
             UPDATE experiments
-            SET title=?, protocol_type=?, assignee=?, status=?, start_date=?, end_date=?, description=?, results=?
+            SET title=?, protocol_type=?, assignee=?, status=?, start_date=?, end_date=?, description=?, results=?, category_id=?
             WHERE id=?
         """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
-              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment_id))
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment.category_id, experiment_id))
         conn.commit()
 
         if cursor.rowcount == 0:
