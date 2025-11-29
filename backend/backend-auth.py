@@ -252,6 +252,21 @@ class Category(CategoryBase):
     id: int
     created_at: datetime
 
+class CommentBase(BaseModel):
+    entity_type: str  # 'task', 'experiment', 'project', etc.
+    entity_id: int
+    content: str
+
+class CommentCreate(CommentBase):
+    pass
+
+class Comment(CommentBase):
+    id: int
+    user_id: int
+    user_name: str  # Nom de l'utilisateur (joint)
+    created_at: datetime
+    updated_at: datetime
+
 # ==================== FONCTIONS UTILITAIRES ====================
 
 def hash_password(password: str) -> str:
@@ -459,6 +474,25 @@ def init_db():
                 )
             """)
 
+            # Table des commentaires
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id SERIAL PRIMARY KEY,
+                    entity_type VARCHAR(50) NOT NULL,
+                    entity_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Index pour améliorer les performances des commentaires
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_comments_entity
+                ON comments(entity_type, entity_id)
+            """)
+
         else:
             # SQLite - Code original
 
@@ -606,6 +640,26 @@ def init_db():
                     FOREIGN KEY (resource_id) REFERENCES resources(id),
                     FOREIGN KEY (used_by) REFERENCES users(id)
                 )
+            """)
+
+            # Table des commentaires
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,
+                    entity_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Index pour améliorer les performances des commentaires
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_comments_entity
+                ON comments(entity_type, entity_id)
             """)
 
         conn.commit()
@@ -1700,6 +1754,152 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
                 "critical": critical_resources
             }
         }
+
+# ==================== ROUTES COMMENTAIRES ====================
+
+@app.get("/api/comments/{entity_type}/{entity_id}", response_model=List[Comment])
+async def get_comments(entity_type: str, entity_id: int, current_user: dict = Depends(get_current_user)):
+    """Récupérer tous les commentaires d'une entité"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            SELECT c.*, u.full_name as user_name
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.entity_type = ? AND c.entity_id = ?
+            ORDER BY c.created_at DESC
+        """), (entity_type, entity_id))
+        comments = [dict(row) for row in cursor.fetchall()]
+        return comments
+
+@app.post("/api/comments", response_model=Comment)
+async def create_comment(comment: CommentCreate, current_user: dict = Depends(get_current_user)):
+    """Créer un nouveau commentaire"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("""
+            INSERT INTO comments (entity_type, entity_id, user_id, content)
+            VALUES (?, ?, ?, ?)
+        """), (comment.entity_type, comment.entity_id, current_user['id'], comment.content))
+        conn.commit()
+
+        comment_id = get_last_id(cursor, conn)
+        cursor.execute(sql("""
+            SELECT c.*, u.full_name as user_name
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.id = ?
+        """), (comment_id,))
+        return dict(cursor.fetchone())
+
+@app.put("/api/comments/{comment_id}", response_model=Comment)
+async def update_comment(comment_id: int, content: str, current_user: dict = Depends(get_current_user)):
+    """Mettre à jour un commentaire (seulement par son auteur)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Vérifier que l'utilisateur est l'auteur
+        cursor.execute(sql("SELECT user_id FROM comments WHERE id = ?"), (comment_id,))
+        comment = cursor.fetchone()
+        if not comment or comment['user_id'] != current_user['id']:
+            raise HTTPException(status_code=403, detail="Not authorized to edit this comment")
+
+        if USE_POSTGRES:
+            cursor.execute(sql("""
+                UPDATE comments
+                SET content = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """), (content, comment_id))
+        else:
+            cursor.execute(sql("""
+                UPDATE comments
+                SET content = ?, updated_at = datetime('now')
+                WHERE id = ?
+            """), (content, comment_id))
+        conn.commit()
+
+        cursor.execute(sql("""
+            SELECT c.*, u.full_name as user_name
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.id = ?
+        """), (comment_id,))
+        return dict(cursor.fetchone())
+
+@app.delete("/api/comments/{comment_id}")
+async def delete_comment(comment_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprimer un commentaire (seulement par son auteur ou admin)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Vérifier que l'utilisateur est l'auteur ou admin
+        cursor.execute(sql("SELECT user_id FROM comments WHERE id = ?"), (comment_id,))
+        comment = cursor.fetchone()
+        if not comment:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        if comment['user_id'] != current_user['id'] and current_user['role'] != 'admin':
+            raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
+
+        cursor.execute(sql("DELETE FROM comments WHERE id = ?"), (comment_id,))
+        conn.commit()
+        return {"message": "Comment deleted"}
+
+# ==================== ROUTES EXPORT ====================
+
+@app.get("/api/experiments/export/csv")
+async def export_experiments_csv(current_user: dict = Depends(get_current_user)):
+    """Exporter toutes les expériences en CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("SELECT * FROM experiments ORDER BY created_at DESC"))
+        experiments = [dict(row) for row in cursor.fetchall()]
+
+    # Créer le CSV
+    output = io.StringIO()
+    if experiments:
+        fieldnames = experiments[0].keys()
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(experiments)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=experiments.csv"}
+    )
+
+@app.get("/api/tasks/export/csv")
+async def export_tasks_csv(current_user: dict = Depends(get_current_user)):
+    """Exporter toutes les tâches en CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql("SELECT * FROM tasks ORDER BY created_at DESC"))
+        tasks = [dict(row) for row in cursor.fetchall()]
+
+    # Créer le CSV
+    output = io.StringIO()
+    if tasks:
+        fieldnames = tasks[0].keys()
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(tasks)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tasks.csv"}
+    )
 
 # ==================== ROUTE RACINE ====================
 

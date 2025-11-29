@@ -622,6 +622,174 @@
         .badge-low { background: #dbeafe; color: #1e40af; }
         .badge-empty { background: #f3f4f6; color: #6b7280; }
 
+        /* KANBAN BOARD */
+        .kanban-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            padding: 20px;
+            min-height: 600px;
+        }
+
+        .kanban-column {
+            background: var(--bg-card);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            max-height: 80vh;
+        }
+
+        .kanban-column-header {
+            padding: 15px;
+            color: white;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .kanban-column-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .kanban-count {
+            background: rgba(255,255,255,0.3);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .kanban-cards {
+            padding: 10px;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 200px;
+        }
+
+        .kanban-card {
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: move;
+            transition: all 0.3s;
+        }
+
+        .kanban-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .kanban-card.dragging {
+            opacity: 0.5;
+        }
+
+        .kanban-card-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .kanban-card-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        .kanban-column.drag-over .kanban-cards {
+            background: rgba(37, 99, 235, 0.1);
+            border: 2px dashed var(--primary);
+        }
+
+        /* SEARCH AND FILTERS */
+        .search-filters {
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .search-bar {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 15px;
+            margin-bottom: 15px;
+        }
+
+        .search-bar:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        /* COMMENTS */
+        .comments-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: var(--bg-main);
+            border-radius: 8px;
+        }
+
+        .comment {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid var(--primary);
+        }
+
+        .comment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .comment-author {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .comment-date {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .comment-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .comment-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .comment-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -715,8 +883,9 @@
             <!-- TABS -->
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('tasks')">📋 Tasks</button>
+                <button class="tab" onclick="switchTab('kanban')">📊 Kanban</button>
                 <button class="tab" onclick="switchTab('projects')">🗂️ Projects</button>
-                <button class="tab" onclick="switchTab('gantt')">📊 Gantt</button>
+                <button class="tab" onclick="switchTab('gantt')">📅 Timeline</button>
                 <button class="tab" onclick="switchTab('experiments')">🧪 Experiments</button>
                 <button class="tab" onclick="switchTab('resources')">📦 Resources</button>
             </div>
@@ -745,6 +914,54 @@
 
                 <div class="card">
                     <div id="tasksContent"></div>
+                </div>
+            </div>
+
+            <!-- KANBAN TAB -->
+            <div id="kanbanTab" class="tab-content">
+                <div class="section-header">
+                    <h2>📊 Kanban Board</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <select id="kanbanEntityFilter" onchange="loadKanban()" style="padding: 8px; border: 2px solid var(--border); border-radius: 8px;">
+                            <option value="experiments">🧪 Experiments</option>
+                            <option value="tasks">📋 Tasks</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="exportKanban()">📥 Export CSV</button>
+                    </div>
+                </div>
+
+                <div class="kanban-board">
+                    <div class="kanban-column" data-status="todo">
+                        <div class="kanban-column-header" style="background: var(--secondary);">
+                            <h3>📝 To Do</h3>
+                            <span class="kanban-count" id="kanban-count-todo">0</span>
+                        </div>
+                        <div class="kanban-cards" id="kanban-todo"></div>
+                    </div>
+
+                    <div class="kanban-column" data-status="in_progress">
+                        <div class="kanban-column-header" style="background: var(--warning);">
+                            <h3>⚙️ In Progress</h3>
+                            <span class="kanban-count" id="kanban-count-in_progress">0</span>
+                        </div>
+                        <div class="kanban-cards" id="kanban-in_progress"></div>
+                    </div>
+
+                    <div class="kanban-column" data-status="done">
+                        <div class="kanban-column-header" style="background: var(--success);">
+                            <h3>✅ Done</h3>
+                            <span class="kanban-count" id="kanban-count-done">0</span>
+                        </div>
+                        <div class="kanban-cards" id="kanban-done"></div>
+                    </div>
+
+                    <div class="kanban-column" data-status="blocked">
+                        <div class="kanban-column-header" style="background: var(--danger);">
+                            <h3>🚫 Blocked</h3>
+                            <span class="kanban-count" id="kanban-count-blocked">0</span>
+                        </div>
+                        <div class="kanban-cards" id="kanban-blocked"></div>
+                    </div>
                 </div>
             </div>
 
@@ -806,7 +1023,41 @@
             <div id="experimentsTab" class="tab-content">
                 <div class="section-header">
                     <h2>Scientific Experiments</h2>
-                    <button class="btn btn-secondary" onclick="openModal('experiment')">+ New Experiment</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="openModal('experiment')">+ New Experiment</button>
+                        <button class="btn btn-secondary" onclick="exportExperiments()">📥 Export CSV</button>
+                    </div>
+                </div>
+
+                <!-- Advanced Search & Filters -->
+                <div class="search-filters">
+                    <input type="text" id="experimentSearch" class="search-bar" placeholder="🔍 Search experiments by title, hypothesis, or tags..." oninput="loadExperiments()">
+                    <div class="filter-row">
+                        <select id="expStatusFilter" onchange="loadExperiments()">
+                            <option value="">All Statuses</option>
+                            <option value="planned">Planned</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                            <option value="on_hold">On Hold</option>
+                        </select>
+                        <select id="expPriorityFilter" onchange="loadExperiments()">
+                            <option value="">All Priorities</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                        <select id="expSuccessFilter" onchange="loadExperiments()">
+                            <option value="">All Results</option>
+                            <option value="success">Success</option>
+                            <option value="partial">Partial Success</option>
+                            <option value="failed">Failed</option>
+                            <option value="inconclusive">Inconclusive</option>
+                        </select>
+                        <input type="date" id="expDateFrom" placeholder="From Date" onchange="loadExperiments()" style="padding: 8px; border: 2px solid var(--border); border-radius: 8px;">
+                        <input type="date" id="expDateTo" placeholder="To Date" onchange="loadExperiments()" style="padding: 8px; border: 2px solid var(--border); border-radius: 8px;">
+                        <button class="btn btn-secondary" onclick="clearExperimentFilters()">Clear Filters</button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -1611,10 +1862,54 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                const experiments = await response.json();
+                let experiments = await response.json();
+
+                // Apply filters
+                const searchTerm = document.getElementById('experimentSearch')?.value.toLowerCase() || '';
+                const statusFilter = document.getElementById('expStatusFilter')?.value || '';
+                const priorityFilter = document.getElementById('expPriorityFilter')?.value || '';
+                const successFilter = document.getElementById('expSuccessFilter')?.value || '';
+                const dateFrom = document.getElementById('expDateFrom')?.value || '';
+                const dateTo = document.getElementById('expDateTo')?.value || '';
+
+                experiments = experiments.filter(exp => {
+                    // Search filter
+                    if (searchTerm && !(
+                        exp.title?.toLowerCase().includes(searchTerm) ||
+                        exp.hypothesis?.toLowerCase().includes(searchTerm) ||
+                        exp.tags?.toLowerCase().includes(searchTerm)
+                    )) {
+                        return false;
+                    }
+
+                    // Status filter
+                    if (statusFilter && exp.status !== statusFilter) {
+                        return false;
+                    }
+
+                    // Priority filter
+                    if (priorityFilter && exp.priority !== priorityFilter) {
+                        return false;
+                    }
+
+                    // Success status filter
+                    if (successFilter && exp.success_status !== successFilter) {
+                        return false;
+                    }
+
+                    // Date range filter
+                    if (dateFrom && exp.start_date < dateFrom) {
+                        return false;
+                    }
+                    if (dateTo && exp.end_date > dateTo) {
+                        return false;
+                    }
+
+                    return true;
+                });
 
                 if (experiments.length === 0) {
-                    content.innerHTML = '<div class="empty-state">No experiments found. Create your first experiment!</div>';
+                    content.innerHTML = '<div class="empty-state">No experiments found matching your filters.</div>';
                     return;
                 }
 
@@ -2458,6 +2753,235 @@
                 document.getElementById('projectModal').classList.add('active');
             } else {
                 originalOpenModal(type, item);
+            }
+        };
+
+        // ==================== KANBAN BOARD ====================
+
+        async function loadKanban() {
+            const entityType = document.getElementById('kanbanEntityFilter').value;
+            const endpoint = entityType === 'experiments' ? '/experiments' : '/tasks';
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const items = await response.json();
+
+                // Clear all columns
+                ['todo', 'in_progress', 'done', 'blocked'].forEach(status => {
+                    document.getElementById(`kanban-${status}`).innerHTML = '';
+                });
+
+                // Map status
+                const statusMap = {
+                    'planned': 'todo',
+                    'in_progress': 'in_progress',
+                    'completed': 'done',
+                    'on_hold': 'blocked',
+                    'todo': 'todo',
+                    'progress': 'in_progress',
+                    'done': 'done'
+                };
+
+                // Add items to columns
+                items.forEach(item => {
+                    const mappedStatus = statusMap[item.status] || 'todo';
+                    const card = createKanbanCard(item, entityType);
+                    document.getElementById(`kanban-${mappedStatus}`).appendChild(card);
+                });
+
+                // Update counts
+                ['todo', 'in_progress', 'done', 'blocked'].forEach(status => {
+                    const count = document.getElementById(`kanban-${status}`).children.length;
+                    document.getElementById(`kanban-count-${status}`).textContent = count;
+                });
+
+                // Setup drag and drop
+                setupDragAndDrop();
+            } catch (error) {
+                console.error('Error loading kanban:', error);
+            }
+        }
+
+        function createKanbanCard(item, entityType) {
+            const card = document.createElement('div');
+            card.className = 'kanban-card';
+            card.draggable = true;
+            card.dataset.id = item.id;
+            card.dataset.type = entityType;
+
+            const priorityColors = {
+                'urgent': '#ef4444',
+                'high': '#f59e0b',
+                'medium': '#3b82f6',
+                'low': '#10b981'
+            };
+
+            card.innerHTML = `
+                <div class="kanban-card-title">${item.title}</div>
+                <div class="kanban-card-meta">
+                    <span style="color: ${priorityColors[item.priority] || '#64748b'}">●</span>
+                    <span>${item.assignee}</span>
+                </div>
+            `;
+
+            card.addEventListener('click', () => {
+                if (entityType === 'experiments') {
+                    // Open experiment modal to view/edit
+                    openModal('experiment', item);
+                } else {
+                    openModal('task', item);
+                }
+            });
+
+            return card;
+        }
+
+        function setupDragAndDrop() {
+            const cards = document.querySelectorAll('.kanban-card');
+            const columns = document.querySelectorAll('.kanban-column');
+
+            cards.forEach(card => {
+                card.addEventListener('dragstart', (e) => {
+                    card.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/html', card.innerHTML);
+                });
+
+                card.addEventListener('dragend', () => {
+                    card.classList.remove('dragging');
+                });
+            });
+
+            columns.forEach(column => {
+                column.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    column.classList.add('drag-over');
+                });
+
+                column.addEventListener('dragleave', () => {
+                    column.classList.remove('drag-over');
+                });
+
+                column.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    column.classList.remove('drag-over');
+
+                    const draggingCard = document.querySelector('.dragging');
+                    if (!draggingCard) return;
+
+                    const cardsContainer = column.querySelector('.kanban-cards');
+                    cardsContainer.appendChild(draggingCard);
+
+                    // Update status in backend
+                    const newStatus = column.dataset.status;
+                    const itemId = draggingCard.dataset.id;
+                    const entityType = draggingCard.dataset.type;
+
+                    const statusMap = {
+                        'todo': entityType === 'experiments' ? 'planned' : 'todo',
+                        'in_progress': 'in_progress',
+                        'done': entityType === 'experiments' ? 'completed' : 'done',
+                        'blocked': 'on_hold'
+                    };
+
+                    await updateItemStatus(entityType, itemId, statusMap[newStatus]);
+                    loadKanban(); // Reload to update counts
+                });
+            });
+        }
+
+        async function updateItemStatus(entityType, itemId, newStatus) {
+            const endpoint = entityType === 'experiments' ? '/experiments' : '/tasks';
+
+            try {
+                // Get the current item
+                const response = await fetch(`${API_URL}${endpoint}/${itemId}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const item = await response.json();
+
+                // Update only the status
+                const updateResponse = await fetch(`${API_URL}${endpoint}/${itemId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({...item, status: newStatus})
+                });
+
+                if (!updateResponse.ok) {
+                    throw new Error('Failed to update status');
+                }
+            } catch (error) {
+                console.error('Error updating status:', error);
+                alert('Failed to update status');
+            }
+        }
+
+        // ==================== ADVANCED FILTERS ====================
+
+        function clearExperimentFilters() {
+            document.getElementById('experimentSearch').value = '';
+            document.getElementById('expStatusFilter').value = '';
+            document.getElementById('expPriorityFilter').value = '';
+            document.getElementById('expSuccessFilter').value = '';
+            document.getElementById('expDateFrom').value = '';
+            document.getElementById('expDateTo').value = '';
+            loadExperiments();
+        }
+
+        // ==================== EXPORT FUNCTIONS ====================
+
+        async function exportExperiments() {
+            try {
+                const response = await fetch(`${API_URL}/experiments/export/csv`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `experiments_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (error) {
+                console.error('Error exporting experiments:', error);
+                alert('Failed to export experiments');
+            }
+        }
+
+        async function exportKanban() {
+            const entityType = document.getElementById('kanbanEntityFilter').value;
+            const endpoint = entityType === 'experiments' ? '/experiments/export/csv' : '/tasks/export/csv';
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${entityType}_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (error) {
+                console.error('Error exporting:', error);
+                alert('Failed to export data');
+            }
+        }
+
+        // Load kanban when tab is switched
+        const originalSwitchTab = switchTab;
+        switchTab = function(tab) {
+            originalSwitchTab(tab);
+            if (tab === 'kanban') {
+                loadKanban();
             }
         };
     </script>
