@@ -880,24 +880,30 @@
 
     <!-- EXPERIMENT MODAL -->
     <div id="experimentModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <h3 id="experimentModalTitle">New Experiment</h3>
                 <button class="btn-close" onclick="closeModal('experiment')">&times;</button>
             </div>
             <form id="experimentForm">
                 <input type="hidden" id="experimentId">
+
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">📋 Informations de base</h4>
                 <div class="form-group">
                     <label>Title *</label>
-                    <input type="text" id="experimentTitle" required>
+                    <input type="text" id="experimentTitle" required placeholder="Ex: Inhibition de la croissance cellulaire">
+                </div>
+                <div class="form-group">
+                    <label>Experiment Number</label>
+                    <input type="text" id="experimentNumber" placeholder="Ex: EXP-2024-001">
                 </div>
                 <div class="form-group">
                     <label>Protocol Type *</label>
-                    <input type="text" id="experimentProtocol" required>
+                    <input type="text" id="experimentProtocol" required placeholder="Ex: PCR, Western Blot, Cell Culture">
                 </div>
                 <div class="form-group">
                     <label>Assignee *</label>
-                    <input type="text" id="experimentAssignee" required>
+                    <input type="text" id="experimentAssignee" required placeholder="Ex: Dr. Smith">
                 </div>
                 <div class="form-group">
                     <label>Status *</label>
@@ -908,6 +914,21 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label>Priority</label>
+                    <select id="experimentPriority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tags</label>
+                    <input type="text" id="experimentTags" placeholder="Ex: PCR, toxicity, phase1 (séparés par virgules)">
+                </div>
+
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">📅 Dates</h4>
+                <div class="form-group">
                     <label>Start Date *</label>
                     <input type="date" id="experimentStartDate" required>
                 </div>
@@ -915,15 +936,59 @@
                     <label>End Date *</label>
                     <input type="date" id="experimentEndDate" required>
                 </div>
+
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">🔬 Détails scientifiques</h4>
                 <div class="form-group">
-                    <label>Description</label>
-                    <input type="text" id="experimentDescription">
+                    <label>Hypothesis</label>
+                    <textarea id="experimentHypothesis" rows="2" placeholder="Hypothèse testée..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Objectives</label>
+                    <textarea id="experimentObjectives" rows="2" placeholder="Objectifs spécifiques..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Description / Protocol</label>
+                    <textarea id="experimentDescription" rows="3" placeholder="Description détaillée du protocole..."></textarea>
+                </div>
+
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">📊 Résultats & Analyse</h4>
+                <div class="form-group">
+                    <label>Observations</label>
+                    <textarea id="experimentObservations" rows="3" placeholder="Notes de laboratoire, observations..."></textarea>
                 </div>
                 <div class="form-group">
                     <label>Results</label>
-                    <input type="text" id="experimentResults">
+                    <textarea id="experimentResults" rows="3" placeholder="Résultats quantitatifs et qualitatifs..."></textarea>
                 </div>
-                <button type="submit" class="btn btn-primary">Save Experiment</button>
+                <div class="form-group">
+                    <label>Conclusion</label>
+                    <textarea id="experimentConclusion" rows="2" placeholder="Conclusion finale..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Success Status</label>
+                    <select id="experimentSuccessStatus">
+                        <option value="">Not evaluated</option>
+                        <option value="success">Success</option>
+                        <option value="partial">Partial Success</option>
+                        <option value="failure">Failure</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Next Steps</label>
+                    <textarea id="experimentNextSteps" rows="2" placeholder="Actions de suivi, prochaines expériences..."></textarea>
+                </div>
+
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">💰 Gestion</h4>
+                <div class="form-group">
+                    <label>Cost (€)</label>
+                    <input type="number" step="0.01" id="experimentCost" placeholder="Ex: 1500.00">
+                </div>
+                <div class="form-group">
+                    <label>Files Link</label>
+                    <input type="url" id="experimentFilesLink" placeholder="Ex: https://drive.google.com/...">
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Save Experiment</button>
             </form>
         </div>
     </div>
@@ -1335,6 +1400,17 @@
                 document.getElementById('experimentEndDate').value = item.end_date;
                 document.getElementById('experimentDescription').value = item.description || '';
                 document.getElementById('experimentResults').value = item.results || '';
+                document.getElementById('experimentPriority').value = item.priority || 'medium';
+                document.getElementById('experimentTags').value = item.tags || '';
+                document.getElementById('experimentNumber').value = item.experiment_number || '';
+                document.getElementById('experimentHypothesis').value = item.hypothesis || '';
+                document.getElementById('experimentObjectives').value = item.objectives || '';
+                document.getElementById('experimentObservations').value = item.observations || '';
+                document.getElementById('experimentConclusion').value = item.conclusion || '';
+                document.getElementById('experimentSuccessStatus').value = item.success_status || '';
+                document.getElementById('experimentNextSteps').value = item.next_steps || '';
+                document.getElementById('experimentFilesLink').value = item.files_link || '';
+                document.getElementById('experimentCost').value = item.cost || '';
             } else if (type === 'resource') {
                 document.getElementById('resourceId').value = item.id;
                 document.getElementById('resourceName').value = item.name;
@@ -1580,7 +1656,7 @@
 
         document.getElementById('experimentForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const expId = document.getElementById('experimentId').value;
             const expData = {
                 title: document.getElementById('experimentTitle').value,
@@ -1590,7 +1666,18 @@
                 start_date: document.getElementById('experimentStartDate').value,
                 end_date: document.getElementById('experimentEndDate').value,
                 description: document.getElementById('experimentDescription').value,
-                results: document.getElementById('experimentResults').value
+                results: document.getElementById('experimentResults').value,
+                priority: document.getElementById('experimentPriority').value,
+                tags: document.getElementById('experimentTags').value || null,
+                experiment_number: document.getElementById('experimentNumber').value || null,
+                hypothesis: document.getElementById('experimentHypothesis').value || null,
+                objectives: document.getElementById('experimentObjectives').value || null,
+                observations: document.getElementById('experimentObservations').value || null,
+                conclusion: document.getElementById('experimentConclusion').value || null,
+                success_status: document.getElementById('experimentSuccessStatus').value || null,
+                next_steps: document.getElementById('experimentNextSteps').value || null,
+                files_link: document.getElementById('experimentFilesLink').value || null,
+                cost: document.getElementById('experimentCost').value ? parseFloat(document.getElementById('experimentCost').value) : null
             };
 
             try {
