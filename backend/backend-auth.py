@@ -153,6 +153,17 @@ class ExperimentBase(BaseModel):
     description: Optional[str] = None
     results: Optional[str] = None
     category_id: Optional[int] = None  # Lien vers la catégorie
+    priority: Optional[str] = "medium"  # low, medium, high, urgent
+    tags: Optional[str] = None  # Tags séparés par virgules
+    experiment_number: Optional[str] = None  # Numéro manuel
+    hypothesis: Optional[str] = None  # Hypothèse testée
+    objectives: Optional[str] = None  # Objectifs spécifiques
+    observations: Optional[str] = None  # Notes de laboratoire
+    conclusion: Optional[str] = None  # Conclusion finale
+    success_status: Optional[str] = None  # success, failure, partial
+    next_steps: Optional[str] = None  # Prochaines étapes
+    files_link: Optional[str] = None  # Lien vers fichiers
+    cost: Optional[float] = None  # Coût de l'expérience
 
 class ExperimentCreate(ExperimentBase):
     pass
@@ -400,6 +411,17 @@ def init_db():
                     description TEXT,
                     results TEXT,
                     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+                    priority VARCHAR(50) DEFAULT 'medium',
+                    tags TEXT,
+                    experiment_number VARCHAR(100),
+                    hypothesis TEXT,
+                    objectives TEXT,
+                    observations TEXT,
+                    conclusion TEXT,
+                    success_status VARCHAR(50),
+                    next_steps TEXT,
+                    files_link VARCHAR(500),
+                    cost DECIMAL(10, 2),
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -532,6 +554,17 @@ def init_db():
                     description TEXT,
                     results TEXT,
                     category_id INTEGER,
+                    priority TEXT DEFAULT 'medium',
+                    tags TEXT,
+                    experiment_number TEXT,
+                    hypothesis TEXT,
+                    objectives TEXT,
+                    observations TEXT,
+                    conclusion TEXT,
+                    success_status TEXT,
+                    next_steps TEXT,
+                    files_link TEXT,
+                    cost REAL,
                     created_by INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
@@ -1093,10 +1126,15 @@ async def create_experiment(experiment: ExperimentCreate, current_user: dict = D
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(sql("""
-            INSERT INTO experiments (title, protocol_type, assignee, status, start_date, end_date, description, results, category_id, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO experiments (title, protocol_type, assignee, status, start_date, end_date, description, results,
+                                   category_id, priority, tags, experiment_number, hypothesis, objectives,
+                                   observations, conclusion, success_status, next_steps, files_link, cost, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
-              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment.category_id, current_user['id']))
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results,
+              experiment.category_id, experiment.priority, experiment.tags, experiment.experiment_number,
+              experiment.hypothesis, experiment.objectives, experiment.observations, experiment.conclusion,
+              experiment.success_status, experiment.next_steps, experiment.files_link, experiment.cost, current_user['id']))
         conn.commit()
 
         exp_id = get_last_id(cursor, conn)
@@ -1114,10 +1152,15 @@ async def update_experiment(
         cursor = conn.cursor()
         cursor.execute(sql("""
             UPDATE experiments
-            SET title=?, protocol_type=?, assignee=?, status=?, start_date=?, end_date=?, description=?, results=?, category_id=?
+            SET title=?, protocol_type=?, assignee=?, status=?, start_date=?, end_date=?, description=?, results=?,
+                category_id=?, priority=?, tags=?, experiment_number=?, hypothesis=?, objectives=?,
+                observations=?, conclusion=?, success_status=?, next_steps=?, files_link=?, cost=?
             WHERE id=?
         """), (experiment.title, experiment.protocol_type, experiment.assignee, experiment.status,
-              experiment.start_date, experiment.end_date, experiment.description, experiment.results, experiment.category_id, experiment_id))
+              experiment.start_date, experiment.end_date, experiment.description, experiment.results,
+              experiment.category_id, experiment.priority, experiment.tags, experiment.experiment_number,
+              experiment.hypothesis, experiment.objectives, experiment.observations, experiment.conclusion,
+              experiment.success_status, experiment.next_steps, experiment.files_link, experiment.cost, experiment_id))
         conn.commit()
 
         if cursor.rowcount == 0:
