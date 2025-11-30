@@ -1241,6 +1241,20 @@
 
                 <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Save Experiment</button>
             </form>
+
+            <!-- Comments Section (only in edit mode) -->
+            <div id="experimentCommentsSection" class="comments-section" style="display: none;">
+                <h4 style="margin: 20px 0 10px 0; color: var(--primary);">💬 Comments</h4>
+
+                <!-- New Comment Form -->
+                <div style="margin-bottom: 20px;">
+                    <textarea id="newCommentContent" class="comment-input" placeholder="Add a comment..."></textarea>
+                    <button class="btn btn-secondary" onclick="addExperimentComment()" style="margin-top: 10px;">Post Comment</button>
+                </div>
+
+                <!-- Comments List -->
+                <div id="commentsList"></div>
+            </div>
         </div>
     </div>
 
@@ -1614,16 +1628,27 @@
         function openModal(type, item = null) {
             const modal = document.getElementById(type + 'Modal');
             modal.classList.add('active');
-            
+
             if (item) {
                 // Edit mode
                 document.getElementById(type + 'ModalTitle').textContent = 'Edit ' + type.charAt(0).toUpperCase() + type.slice(1);
                 fillForm(type, item);
+
+                // Show comments section for experiments in edit mode
+                if (type === 'experiment') {
+                    document.getElementById('experimentCommentsSection').style.display = 'block';
+                    loadExperimentComments(item.id);
+                }
             } else {
                 // Create mode
                 document.getElementById(type + 'ModalTitle').textContent = 'New ' + type.charAt(0).toUpperCase() + type.slice(1);
                 document.getElementById(type + 'Form').reset();
                 document.getElementById(type + 'Id').value = '';
+
+                // Hide comments section for new experiments
+                if (type === 'experiment') {
+                    document.getElementById('experimentCommentsSection').style.display = 'none';
+                }
             }
         }
 
@@ -2984,6 +3009,102 @@
                 loadKanban();
             }
         };
+
+        // ==================== COMMENTS FUNCTIONS ====================
+
+        async function loadExperimentComments(experimentId) {
+            const commentsList = document.getElementById('commentsList');
+            commentsList.innerHTML = '<div class="loading">Loading comments...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/comments/experiment/${experimentId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const comments = await response.json();
+
+                if (comments.length === 0) {
+                    commentsList.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">No comments yet. Be the first to comment!</div>';
+                    return;
+                }
+
+                commentsList.innerHTML = comments.map(comment => `
+                    <div class="comment">
+                        <div class="comment-header">
+                            <span class="comment-author">${comment.user_name}</span>
+                            <span class="comment-date">${new Date(comment.created_at).toLocaleString()}</span>
+                        </div>
+                        <div class="comment-content">${comment.content}</div>
+                        ${comment.user_id === currentUser.id ? `
+                            <div class="comment-actions">
+                                <button class="btn btn-sm btn-delete" onclick="deleteComment(${comment.id})">Delete</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading comments:', error);
+                commentsList.innerHTML = '<div style="color: var(--danger);">Error loading comments</div>';
+            }
+        }
+
+        async function addExperimentComment() {
+            const experimentId = document.getElementById('experimentId').value;
+            const content = document.getElementById('newCommentContent').value;
+
+            if (!content.trim()) {
+                alert('Please enter a comment');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/comments`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        entity_type: 'experiment',
+                        entity_id: parseInt(experimentId),
+                        content: content
+                    })
+                });
+
+                if (response.ok) {
+                    document.getElementById('newCommentContent').value = '';
+                    loadExperimentComments(experimentId);
+                } else {
+                    alert('Failed to add comment');
+                }
+            } catch (error) {
+                console.error('Error adding comment:', error);
+                alert('Failed to add comment');
+            }
+        }
+
+        async function deleteComment(commentId) {
+            if (!confirm('Are you sure you want to delete this comment?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/comments/${commentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const experimentId = document.getElementById('experimentId').value;
+                    loadExperimentComments(experimentId);
+                } else {
+                    alert('Failed to delete comment');
+                }
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+                alert('Failed to delete comment');
+            }
+        }
     </script>
 </body>
 </html>
