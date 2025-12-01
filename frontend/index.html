@@ -2929,14 +2929,14 @@
                 const item = await response.json();
 
                 // Create clean object with only the fields expected by the API
-                // Exclude id, created_at, created_by, etc.
+                // Use || to provide defaults for ALL required fields (prevents undefined)
                 const cleanItem = {
-                    title: item.title,
+                    title: item.title || '',
                     protocol_type: item.protocol_type || '',
-                    assignee: item.assignee,
+                    assignee: item.assignee || '',
                     status: newStatus,  // Use the new status
-                    start_date: item.start_date,
-                    end_date: item.end_date,
+                    start_date: item.start_date || new Date().toISOString().split('T')[0],
+                    end_date: item.end_date || new Date().toISOString().split('T')[0],
                     description: item.description || null,
                     results: item.results || null,
                     category_id: item.category_id || null,
@@ -2955,12 +2955,12 @@
 
                 // For tasks, use simpler structure
                 const updateData = entityType === 'experiments' ? cleanItem : {
-                    title: item.title,
-                    assignee: item.assignee,
+                    title: item.title || '',
+                    assignee: item.assignee || '',
                     status: newStatus,
-                    priority: item.priority,
-                    start_date: item.start_date,
-                    end_date: item.end_date,
+                    priority: item.priority || 'medium',
+                    start_date: item.start_date || new Date().toISOString().split('T')[0],
+                    end_date: item.end_date || new Date().toISOString().split('T')[0],
                     deadline: item.deadline || null,
                     description: item.description || null
                 };
