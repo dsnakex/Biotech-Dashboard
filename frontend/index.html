@@ -2928,22 +2928,61 @@
                 });
                 const item = await response.json();
 
-                // Update only the status
+                // Create clean object with only the fields expected by the API
+                // Exclude id, created_at, created_by, etc.
+                const cleanItem = {
+                    title: item.title,
+                    protocol_type: item.protocol_type || '',
+                    assignee: item.assignee,
+                    status: newStatus,  // Use the new status
+                    start_date: item.start_date,
+                    end_date: item.end_date,
+                    description: item.description || null,
+                    results: item.results || null,
+                    category_id: item.category_id || null,
+                    priority: item.priority || 'medium',
+                    tags: item.tags || null,
+                    experiment_number: item.experiment_number || null,
+                    hypothesis: item.hypothesis || null,
+                    objectives: item.objectives || null,
+                    observations: item.observations || null,
+                    conclusion: item.conclusion || null,
+                    success_status: item.success_status || null,
+                    next_steps: item.next_steps || null,
+                    files_link: item.files_link || null,
+                    cost: item.cost || null
+                };
+
+                // For tasks, use simpler structure
+                const updateData = entityType === 'experiments' ? cleanItem : {
+                    title: item.title,
+                    assignee: item.assignee,
+                    status: newStatus,
+                    priority: item.priority,
+                    start_date: item.start_date,
+                    end_date: item.end_date,
+                    deadline: item.deadline || null,
+                    description: item.description || null
+                };
+
+                // Update the status
                 const updateResponse = await fetch(`${API_URL}${endpoint}/${itemId}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({...item, status: newStatus})
+                    body: JSON.stringify(updateData)
                 });
 
                 if (!updateResponse.ok) {
+                    const errorText = await updateResponse.text();
+                    console.error('Update failed:', errorText);
                     throw new Error('Failed to update status');
                 }
             } catch (error) {
                 console.error('Error updating status:', error);
-                alert('Failed to update status');
+                alert('Failed to update status: ' + error.message);
             }
         }
 
