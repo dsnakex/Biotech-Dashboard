@@ -2789,7 +2789,7 @@
 
             try {
                 const response = await fetch(`${API_URL}${endpoint}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const items = await response.json();
 
@@ -2798,15 +2798,15 @@
                     document.getElementById(`kanban-${status}`).innerHTML = '';
                 });
 
-                // Map status
+                // Map status from DB to Kanban columns
                 const statusMap = {
-                    'planned': 'todo',
-                    'in_progress': 'in_progress',
-                    'completed': 'done',
-                    'on_hold': 'blocked',
-                    'todo': 'todo',
-                    'progress': 'in_progress',
-                    'done': 'done'
+                    'planned': 'todo',        // experiments
+                    'progress': 'in_progress', // experiments
+                    'done': 'done',           // experiments & tasks
+                    'on_hold': 'blocked',     // experiments
+                    'todo': 'todo',           // tasks
+                    'in_progress': 'in_progress', // tasks (if exists)
+                    'completed': 'done'       // legacy support
                 };
 
                 // Add items to columns
@@ -2904,10 +2904,11 @@
                     const itemId = draggingCard.dataset.id;
                     const entityType = draggingCard.dataset.type;
 
+                    // Map Kanban columns to DB status values
                     const statusMap = {
                         'todo': entityType === 'experiments' ? 'planned' : 'todo',
-                        'in_progress': 'in_progress',
-                        'done': entityType === 'experiments' ? 'completed' : 'done',
+                        'in_progress': entityType === 'experiments' ? 'progress' : 'progress',
+                        'done': 'done',  // same for both
                         'blocked': 'on_hold'
                     };
 
@@ -2923,7 +2924,7 @@
             try {
                 // Get the current item
                 const response = await fetch(`${API_URL}${endpoint}/${itemId}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const item = await response.json();
 
@@ -2932,7 +2933,7 @@
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({...item, status: newStatus})
                 });
